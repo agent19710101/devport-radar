@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/agent19710101/devport-radar/pkg/radar"
@@ -130,5 +132,24 @@ func TestServiceKeyPortProcess(t *testing.T) {
 				t.Fatalf("serviceKey() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestRenderTableGolden(t *testing.T) {
+	services := []radar.Service{
+		{Port: 3000, Process: "node", PID: 9123, HTTPStatus: 200, Fingerprint: "vite", Title: "Frontend Dashboard"},
+		{Port: 5432, Process: "postgres", PID: 1102, Fingerprint: "postgresql"},
+		{Port: 8080, HTTPStatus: 404, Fingerprint: "unknown", Title: "A very long service title that should be truncated"},
+	}
+
+	got := renderTable(services, 20)
+	goldenPath := filepath.Join("testdata", "table.golden")
+	wantBytes, err := os.ReadFile(goldenPath)
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	want := string(wantBytes)
+	if got != want {
+		t.Fatalf("renderTable() mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
 	}
 }

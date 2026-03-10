@@ -80,6 +80,7 @@ devport-radar --title-width 24
 - [ ] Project labels/aliases for stable service naming
 - [ ] Prometheus exporter mode
 - [ ] macOS fallback backend (`lsof`) when `ss` is unavailable
+- [ ] See scoped milestones in [RELEASE_PLAN.md](./RELEASE_PLAN.md)
 
 ## License
 

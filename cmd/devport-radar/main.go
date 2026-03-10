@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -156,15 +157,19 @@ func buildDeltaEvents(prev, current map[string]radar.Service) []watchEvent {
 }
 
 func printTable(services []radar.Service, titleWidth int) {
+	fmt.Fprint(os.Stdout, renderTable(services, titleWidth))
+}
+
+func renderTable(services []radar.Service, titleWidth int) string {
 	if len(services) == 0 {
-		fmt.Println("No listening TCP services detected.")
-		return
+		return "No listening TCP services detected.\n"
 	}
 	if titleWidth < 8 {
 		titleWidth = 8
 	}
 
-	tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+	var b bytes.Buffer
+	tw := tabwriter.NewWriter(&b, 0, 2, 2, ' ', 0)
 	fmt.Fprintln(tw, "PORT\tPROCESS\tPID\tHTTP\tFINGERPRINT\tTITLE")
 	for _, s := range services {
 		httpStatus := "-"
@@ -190,6 +195,7 @@ func printTable(services []radar.Service, titleWidth int) {
 		fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\n", s.Port, proc, pid, httpStatus, fp, title)
 	}
 	_ = tw.Flush()
+	return b.String()
 }
 
 func compact(s string, max int) string {
