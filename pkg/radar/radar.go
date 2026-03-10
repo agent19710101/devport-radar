@@ -260,6 +260,24 @@ func extractTitle(body string) string {
 func inferFingerprint(s Service) string {
 	text := strings.ToLower(strings.Join([]string{s.Process, s.Server, s.Title}, " "))
 	switch {
+	case strings.Contains(text, "ollama"):
+		return "ollama"
+	case strings.Contains(text, "open-webui") || strings.Contains(text, "open webui"):
+		return "open-webui"
+	case strings.Contains(text, "qdrant"):
+		return "qdrant"
+	case strings.Contains(text, "redis"):
+		return "redis"
+	case strings.Contains(text, "postgres"):
+		return "postgresql"
+	case strings.Contains(text, "mysql"):
+		return "mysql"
+	case strings.Contains(text, "mongo"):
+		return "mongodb"
+	case strings.Contains(text, "grafana"):
+		return "grafana"
+	case strings.Contains(text, "prometheus"):
+		return "prometheus"
 	case strings.Contains(text, "vite"):
 		return "vite-dev-server"
 	case strings.Contains(text, "next"):

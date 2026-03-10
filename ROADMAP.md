@@ -16,4 +16,4 @@
 
 ## Later
 
-- [ ] Agent-runtime profile presets + richer fingerprint hints
+- [x] Agent-runtime profile presets + richer fingerprint hints

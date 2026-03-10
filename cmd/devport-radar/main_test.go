@@ -47,6 +47,52 @@ func TestParsePortFilter(t *testing.T) {
 	}
 }
 
+func TestParseProfilePreset(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		want    []int
+		wantErr bool
+	}{
+		{name: "empty", raw: "", want: nil},
+		{name: "agent", raw: "agent", want: []int{11434, 3000, 5173}},
+		{name: "web", raw: "web", want: []int{3000, 8080}},
+		{name: "data", raw: "data", want: []int{5432, 6379}},
+		{name: "invalid", raw: "other", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseProfilePreset(tc.raw)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseProfilePreset() error = %v", err)
+			}
+			for _, p := range tc.want {
+				if _, ok := got[p]; !ok {
+					t.Fatalf("expected port %d in profile", p)
+				}
+			}
+		})
+	}
+}
+
+func TestMergePortFilters(t *testing.T) {
+	a := map[int]struct{}{3000: {}, 5432: {}}
+	b := map[int]struct{}{8080: {}, 5432: {}}
+	got := mergePortFilters(a, b)
+	for _, p := range []int{3000, 5432, 8080} {
+		if _, ok := got[p]; !ok {
+			t.Fatalf("missing merged port %d", p)
+		}
+	}
+}
+
 func TestFilterServices(t *testing.T) {
 	services := []radar.Service{{Port: 8080}, {Port: 3000}, {Port: 5432}}
 	filter, err := parsePortFilter("3000,5432")

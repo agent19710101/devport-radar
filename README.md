@@ -10,7 +10,7 @@ Modern local development stacks (apps, databases, queues, agent runtimes, browse
 
 ## Status
 
-- Current release: **v0.4.7**
+- Current release: **v0.4.8**
 - Platform: Linux (`ss`) + macOS fallback (`lsof`)
 - Maturity: early, actively iterating in small releases
 - Merge readiness requires CI matrix (`go1.24.x`, `go1.25.x`) with `gofmt`, `go vet`, `go test`, and `go test -race` (latest Go)
@@ -26,9 +26,10 @@ Modern local development stacks (apps, databases, queues, agent runtimes, browse
 - Watch mode with appear/disappear delta logs
 - Configurable watch change detection (`--watch-detect port|port-process`)
 - Structured watch JSON mode (`--watch --json`) emitting NDJSON `appeared`/`disappeared`/`snapshot`/`error` events
-- Focus scans via `--ports` list/range filter
+- Focus scans via `--ports` list/range filter or `--profile` presets (`agent|web|data`)
 - Limit output to responsive HTTP services via `--only-http`
 - Optional probe bypass via `--no-http-probe` for faster port/process inventory
+- Richer service fingerprints for common local runtimes (Ollama, Open WebUI, Qdrant, Redis, Postgres, MySQL, MongoDB, Grafana, Prometheus)
 
 ## Install
 
@@ -66,6 +67,9 @@ devport-radar --ports 3000,5173,8080,5432
 
 # probe a full range
 devport-radar --ports 8000-8100
+
+# focus on common local agent runtime stack ports
+devport-radar --profile agent
 
 # tighten probe timeout
 devport-radar --timeout 600ms

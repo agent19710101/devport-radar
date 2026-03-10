@@ -40,6 +40,7 @@ func main() {
 		watchDetect = flag.String("watch-detect", "port", "Change detection mode: port or port-process")
 		watchStrict = flag.Bool("watch-strict", false, "Fail fast in watch mode on first scan error")
 		ports       = flag.String("ports", "", "Optional port filter list/ranges (e.g. 3000,5432,8000-8010)")
+		profile     = flag.String("profile", "", "Optional scan profile preset: agent, web, data")
 		titleWidth  = flag.Int("title-width", 42, "Max title width for table output")
 		onlyHTTP    = flag.Bool("only-http", false, "Show only services with successful HTTP probe response")
 		noHTTPProbe = flag.Bool("no-http-probe", false, "Disable HTTP probing for faster port/process-only scans")
@@ -50,6 +51,11 @@ func main() {
 	if err != nil {
 		exitf("invalid --ports filter: %v", err)
 	}
+	profileFilter, err := parseProfilePreset(*profile)
+	if err != nil {
+		exitf("invalid --profile: %v", err)
+	}
+	filter = mergePortFilters(filter, profileFilter)
 
 	detectMode, err := parseWatchDetectMode(*watchDetect)
 	if err != nil {
@@ -324,6 +330,49 @@ func serviceKey(s radar.Service, detectMode string) string {
 		}
 	}
 	return intString(s.Port)
+}
+
+func parseProfilePreset(raw string) (map[int]struct{}, error) {
+	preset := strings.TrimSpace(strings.ToLower(raw))
+	if preset == "" {
+		return nil, nil
+	}
+
+	toFilter := func(ports []int) map[int]struct{} {
+		filter := make(map[int]struct{}, len(ports))
+		for _, p := range ports {
+			filter[p] = struct{}{}
+		}
+		return filter
+	}
+
+	switch preset {
+	case "agent":
+		return toFilter([]int{11434, 3000, 5173, 6333, 6379, 8080, 8000}), nil
+	case "web":
+		return toFilter([]int{3000, 5173, 8000, 8080, 8081, 8888}), nil
+	case "data":
+		return toFilter([]int{5432, 6379, 27017, 3306, 9200, 6333}), nil
+	default:
+		return nil, fmt.Errorf("unsupported preset %q (use agent, web, or data)", raw)
+	}
+}
+
+func mergePortFilters(primary, secondary map[int]struct{}) map[int]struct{} {
+	if len(primary) == 0 {
+		return secondary
+	}
+	if len(secondary) == 0 {
+		return primary
+	}
+	merged := make(map[int]struct{}, len(primary)+len(secondary))
+	for p := range primary {
+		merged[p] = struct{}{}
+	}
+	for p := range secondary {
+		merged[p] = struct{}{}
+	}
+	return merged
 }
 
 func parsePortFilter(raw string) (map[int]struct{}, error) {

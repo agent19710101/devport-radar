@@ -64,6 +64,9 @@ func TestInferFingerprint(t *testing.T) {
 		want string
 	}{
 		{name: "next", s: Service{Title: "Next App"}, want: "nextjs"},
+		{name: "ollama", s: Service{Process: "ollama"}, want: "ollama"},
+		{name: "postgres", s: Service{Process: "postgres"}, want: "postgresql"},
+		{name: "qdrant", s: Service{Title: "Qdrant"}, want: "qdrant"},
 		{name: "go", s: Service{Server: "go-http"}, want: "go-service"},
 		{name: "fallback", s: Service{HTTPStatus: 200}, want: "http-service"},
 	}
