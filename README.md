@@ -10,10 +10,10 @@ Modern local development stacks (apps, databases, queues, agent runtimes, browse
 
 ## Status
 
-- Current release: **v0.5.1**
+- Current release: **v0.5.2**
 - Platform: Linux (`ss`) + macOS fallback (`lsof`)
 - Maturity: early, actively iterating in small releases
-- Merge readiness requires CI matrix (`go1.24.x`, `go1.25.x`) with `gofmt`, `go vet`, `go test`, and `go test -race` (latest Go)
+- Merge readiness requires CI matrix (`ubuntu-latest` + `macos-latest`, Go `1.24.x`/`1.25.x`) with `gofmt`, `go vet`, `go test`, and `go test -race` (latest Ubuntu Go lane)
 
 ## Features
 
@@ -171,6 +171,7 @@ Each line is a JSON object with:
 - Increase timeout for slower local services: `devport-radar --timeout 2s`
 - Use `--only-http` only when you explicitly want probe-positive services
 - For transient watch-time probe/scan errors, default mode retries automatically; use `--watch-strict` only for fail-fast automation
+- Redirect responses are recorded as-is; probes do not follow off-host redirects
 
 ### Watch mode automation
 

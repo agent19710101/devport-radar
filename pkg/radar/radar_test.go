@@ -1,8 +1,15 @@
 package radar
 
 import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os/exec"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestParsePort(t *testing.T) {
@@ -106,5 +113,61 @@ func TestProbeTargetsIncludeLoopbacksForWildcardBind(t *testing.T) {
 		if !slices.Contains(targets, w) {
 			t.Fatalf("targets %v missing %q", targets, w)
 		}
+	}
+}
+
+func TestProbeHTTPDoesNotFollowRedirect(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://example.com", http.StatusFound)
+	}))
+	defer target.Close()
+
+	hostPort := target.Listener.Addr().String()
+	svc := Service{Port: parsePort(hostPort), Bind: hostPort}
+	probeHTTP(t.Context(), &svc, time.Second)
+
+	if svc.HTTPStatus != http.StatusFound {
+		t.Fatalf("HTTPStatus = %d, want %d", svc.HTTPStatus, http.StatusFound)
+	}
+	if svc.Title != "" {
+		t.Fatalf("Title = %q, want empty", svc.Title)
+	}
+	if svc.Fingerprint != "http-service" {
+		t.Fatalf("Fingerprint = %q, want http-service", svc.Fingerprint)
+	}
+}
+
+func TestScanListenersWithRunnerFallsBackToLsof(t *testing.T) {
+	run := func(_ context.Context, name string, _ ...string) ([]byte, error) {
+		switch name {
+		case "ss":
+			return nil, exec.ErrNotFound
+		case "lsof":
+			return []byte("COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\nnode 12345 user 22u IPv4 0x1234 0t0 TCP 127.0.0.1:3000 (LISTEN)\n"), nil
+		default:
+			return nil, errors.New("unexpected command")
+		}
+	}
+
+	services, err := scanListenersWithRunner(t.Context(), run)
+	if err != nil {
+		t.Fatalf("scanListenersWithRunner() error = %v", err)
+	}
+	if len(services) != 1 || services[0].Port != 3000 {
+		t.Fatalf("unexpected services: %+v", services)
+	}
+}
+
+func TestScanListenersWithRunnerReturnsSSError(t *testing.T) {
+	run := func(_ context.Context, name string, _ ...string) ([]byte, error) {
+		if name == "ss" {
+			return nil, errors.New("permission denied")
+		}
+		return nil, nil
+	}
+
+	_, err := scanListenersWithRunner(t.Context(), run)
+	if err == nil || !strings.Contains(err.Error(), "run ss") {
+		t.Fatalf("expected ss error, got %v", err)
 	}
 }

@@ -59,8 +59,18 @@ func Scan(ctx context.Context, timeout time.Duration) ([]Service, error) {
 	return services, nil
 }
 
+type commandRunner func(context.Context, string, ...string) ([]byte, error)
+
+func defaultCommandRunner(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, name, args...).Output()
+}
+
 func scanListeners(ctx context.Context) ([]Service, error) {
-	out, err := exec.CommandContext(ctx, "ss", "-ltnpH").Output()
+	return scanListenersWithRunner(ctx, defaultCommandRunner)
+}
+
+func scanListenersWithRunner(ctx context.Context, run commandRunner) ([]Service, error) {
+	out, err := run(ctx, "ss", "-ltnpH")
 	if err == nil {
 		return parseSSOutput(out), nil
 	}
@@ -69,7 +79,7 @@ func scanListeners(ctx context.Context) ([]Service, error) {
 		return nil, fmt.Errorf("run ss: %w", err)
 	}
 
-	out, lsofErr := exec.CommandContext(ctx, "lsof", "-nP", "-iTCP", "-sTCP:LISTEN").Output()
+	out, lsofErr := run(ctx, "lsof", "-nP", "-iTCP", "-sTCP:LISTEN")
 	if lsofErr != nil {
 		return nil, fmt.Errorf("run ss: %w; run lsof fallback: %v", err, lsofErr)
 	}
@@ -170,7 +180,12 @@ func probeHTTP(ctx context.Context, svc *Service, timeout time.Duration) {
 		return
 	}
 
-	client := &http.Client{Timeout: timeout}
+	client := &http.Client{
+		Timeout: timeout,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	for _, url := range probeTargets(svc.Bind, svc.Port) {
 		reqCtx, cancel := context.WithTimeout(ctx, timeout)
 		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
