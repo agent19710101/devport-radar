@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/agent19710101/devport-radar/pkg/radar"
 )
@@ -151,5 +153,58 @@ func TestRenderTableGolden(t *testing.T) {
 	want := string(wantBytes)
 	if got != want {
 		t.Fatalf("renderTable() mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+func TestWatchLoopCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ticks := make(chan time.Time)
+	scans := 0
+	emits := 0
+
+	scan := func(context.Context, time.Duration) ([]radar.Service, error) {
+		scans++
+		return []radar.Service{{Port: 8080, PID: scans, Process: "app"}}, nil
+	}
+	emit := func(_, _ map[string]radar.Service, _ []radar.Service) {
+		emits++
+		if emits == 2 {
+			cancel()
+		}
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- watchLoop(ctx, 5, time.Second, false, nil, 42, "port", scan, ticks, emit)
+	}()
+
+	ticks <- time.Now()
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("watchLoop() error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("watchLoop did not stop after cancellation")
+	}
+
+	if scans != 2 {
+		t.Fatalf("scan count = %d, want 2", scans)
+	}
+	if emits != 2 {
+		t.Fatalf("emit count = %d, want 2", emits)
+	}
+}
+
+func TestWatchLoopPropagatesScanError(t *testing.T) {
+	scan := func(context.Context, time.Duration) ([]radar.Service, error) {
+		return nil, context.DeadlineExceeded
+	}
+	err := watchLoop(context.Background(), 5, time.Second, false, nil, 42, "port", scan, make(chan time.Time), nil)
+	if err == nil {
+		t.Fatal("expected error")
 	}
 }

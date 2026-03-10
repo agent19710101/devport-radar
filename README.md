@@ -10,9 +10,10 @@ Modern local development stacks (apps, databases, queues, agent runtimes, browse
 
 ## Status
 
-- Current release: **v0.3.0**
+- Current release: **v0.4.0**
 - Platform: Linux (`ss` backend)
 - Maturity: early, actively iterating in small releases
+- Merge readiness requires CI (`gofmt`, `go vet`, `go test`) on push/PR
 
 ## Features
 
@@ -72,6 +73,54 @@ devport-radar --watch --interval 3
 
 # reduce title truncation in narrow terminals
 devport-radar --title-width 24
+```
+
+## Automation Contract (v0.x, stable unless noted)
+
+### Exit behavior
+
+- `0`: successful scan/watch run
+- `1`: invalid arguments, scan/probe failures, or JSON encoding failures
+
+### `--json` one-shot schema
+
+`devport-radar --json` emits a single JSON array of services:
+
+```json
+[
+  {
+    "Port": 8080,
+    "Process": "my-app",
+    "PID": 12345,
+    "HTTPStatus": 200,
+    "Server": "Caddy",
+    "Title": "Dashboard",
+    "Fingerprint": "http-service"
+  }
+]
+```
+
+### `--watch --json` NDJSON event schema
+
+Each line is a JSON object with:
+
+- `type`: `appeared` | `disappeared` | `snapshot`
+- `timestamp`: RFC3339 time
+- `port`: present for delta events
+- `service`: present for delta events
+- `services`: present for `snapshot` events
+
+### `--watch-detect`
+
+- `port` (default): identity is only the port; process restarts on same port are not emitted as changes.
+- `port-process`: identity is `port+pid` (fallback `port+process`), so process swaps on the same port are emitted.
+
+### Script example (jq)
+
+```bash
+# print newly appeared ports in watch mode
+(devport-radar --watch --json --interval 2 \
+  | jq -r 'select(.type=="appeared") | .service.Port')
 ```
 
 ## Roadmap

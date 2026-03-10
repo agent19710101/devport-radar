@@ -8,9 +8,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -25,10 +27,13 @@ type watchEvent struct {
 	Timestamp time.Time       `json:"timestamp"`
 }
 
+type scanFn func(context.Context, time.Duration) ([]radar.Service, error)
+type emitFn func(prev, current map[string]radar.Service, services []radar.Service)
+
 func main() {
 	var (
-		jsonOut    = flag.Bool("json", false, "Print JSON output")
-		timeout    = flag.Duration("timeout", 900*time.Millisecond, "HTTP probe timeout")
+		jsonOut     = flag.Bool("json", false, "Print JSON output")
+		timeout     = flag.Duration("timeout", 900*time.Millisecond, "HTTP probe timeout")
 		watch       = flag.Bool("watch", false, "Refresh continuously and show service deltas")
 		intervalS   = flag.Int("interval", 5, "Watch refresh interval in seconds")
 		watchDetect = flag.String("watch-detect", "port", "Change detection mode: port or port-process")
@@ -47,12 +52,17 @@ func main() {
 		exitf("invalid --watch-detect: %v", err)
 	}
 
+	ctx := context.Background()
 	if *watch {
-		watchLoop(*intervalS, *timeout, *jsonOut, filter, *titleWidth, detectMode)
+		watchCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		if err := watchLoop(watchCtx, *intervalS, *timeout, *jsonOut, filter, *titleWidth, detectMode, radar.Scan, nil, nil); err != nil {
+			exitf("watch failed: %v", err)
+		}
 		return
 	}
 
-	services, err := radar.Scan(context.Background(), *timeout)
+	services, err := radar.Scan(ctx, *timeout)
 	if err != nil {
 		exitf("scan failed: %v", err)
 	}
@@ -72,33 +82,77 @@ func printServices(services []radar.Service, jsonOut bool, titleWidth int) {
 	printTable(services, titleWidth)
 }
 
-func watchLoop(intervalS int, timeout time.Duration, jsonOut bool, filter map[int]struct{}, titleWidth int, detectMode string) {
+func watchLoop(
+	ctx context.Context,
+	intervalS int,
+	timeout time.Duration,
+	jsonOut bool,
+	filter map[int]struct{},
+	titleWidth int,
+	detectMode string,
+	scan scanFn,
+	tick <-chan time.Time,
+	emit emitFn,
+) error {
 	if intervalS <= 0 {
 		intervalS = 5
 	}
-	var prev map[string]radar.Service
-	for {
-		services, err := radar.Scan(context.Background(), timeout)
-		if err != nil {
-			exitf("scan failed: %v", err)
-		}
-		services = filterServices(services, filter)
-		current := serviceIndex(services, detectMode)
-
-		if jsonOut {
-			if prev != nil {
-				printDeltaJSON(prev, current)
+	if scan == nil {
+		scan = radar.Scan
+	}
+	if emit == nil {
+		emit = func(prev, current map[string]radar.Service, services []radar.Service) {
+			if jsonOut {
+				if prev != nil {
+					printDeltaJSON(prev, current)
+				}
+				printWatchSnapshotJSON(services)
+				return
 			}
-			printWatchSnapshotJSON(services)
-		} else {
 			if prev != nil {
 				printDelta(prev, current)
 			}
 			printTable(services, titleWidth)
 		}
+	}
 
+	if err := ctx.Err(); err != nil {
+		return nil
+	}
+
+	var ticker *time.Ticker
+	if tick == nil {
+		ticker = time.NewTicker(time.Duration(intervalS) * time.Second)
+		defer ticker.Stop()
+		tick = ticker.C
+	}
+
+	var prev map[string]radar.Service
+	runOnce := func() error {
+		services, err := scan(ctx, timeout)
+		if err != nil {
+			return fmt.Errorf("scan failed: %w", err)
+		}
+		services = filterServices(services, filter)
+		current := serviceIndex(services, detectMode)
+		emit(prev, current, services)
 		prev = current
-		time.Sleep(time.Duration(intervalS) * time.Second)
+		return nil
+	}
+
+	if err := runOnce(); err != nil {
+		return err
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-tick:
+			if err := runOnce(); err != nil {
+				return err
+			}
+		}
 	}
 }
 
