@@ -1,28 +1,29 @@
 # devport-radar
 
-Discover local development services by port, process, and lightweight HTTP fingerprinting.
+Discover local development services by port, process, and lightweight HTTP fingerprints.
 
-`devport-radar` is a practical Go CLI for developers and coding agents who need fast visibility into *what is running on localhost right now*.
+## Problem
 
-## Why this exists
+Modern local development stacks (apps, databases, queues, agent runtimes, browser tooling) spin up many listeners quickly. It is often unclear what is running, where, and which service is healthy.
 
-Recent dev-tool trends are converging on:
-- autonomous agents that spin many local services,
-- browser/automation tooling that needs stable targets,
-- better local DX around service discovery.
+`devport-radar` provides a terminal-first map of listening TCP services with process metadata and fast HTTP probing.
 
-`devport-radar` gives a terminal-first live map of listening services with enough metadata to act quickly.
+## Status
 
-## Features (v0)
+- Current release: **v0.1.0**
+- Platform: Linux (`ss` backend)
+- Maturity: early, actively iterating in small releases
 
-- Scans local listening TCP sockets via `ss -ltnpH`
-- Dedupe across IPv4/IPv6 listeners
-- Resolves process name + PID when available
-- Probes `http://127.0.0.1:<port>` with timeout
-- Extracts HTTP status, `Server` header, and page `<title>`
-- Infers a coarse service fingerprint (`nextjs`, `vite-dev-server`, `python-web`, etc.)
-- Outputs table or JSON
-- Optional watch mode with periodic refresh and port appear/disappear delta logs
+## Features
+
+- Scan local listening TCP sockets via `ss -ltnpH`
+- Dedupe duplicate listeners (e.g., IPv4/IPv6 overlap)
+- Resolve process name + PID when available
+- Probe `http://127.0.0.1:<port>` with configurable timeout
+- Capture HTTP status, `Server`, page `<title>`, and coarse fingerprint
+- Output in table or JSON
+- Watch mode with appear/disappear delta logs
+- Focus scans via `--ports` list/range filter
 
 ## Install
 
@@ -32,7 +33,7 @@ Recent dev-tool trends are converging on:
 go install github.com/agent19710101/devport-radar/cmd/devport-radar@latest
 ```
 
-### Build locally
+### Build from source
 
 ```bash
 git clone git@github.com:agent19710101/devport-radar.git
@@ -40,38 +41,37 @@ cd devport-radar
 go build ./cmd/devport-radar
 ```
 
-## Usage
+## Examples
 
 ```bash
-# one-shot table
+# one-shot table output
 devport-radar
 
-# json output
+# output as json
 devport-radar --json
 
-# tune HTTP probe timeout
-devport-radar --timeout 1200ms
+# probe only common app ports
+devport-radar --ports 3000,5173,8080,5432
 
-# live refresh every 3s
+# probe a full range
+devport-radar --ports 8000-8100
+
+# tighten probe timeout
+devport-radar --timeout 600ms
+
+# live mode every 3 seconds
 devport-radar --watch --interval 3
-```
 
-## Example output
-
-```text
-PORT   PROCESS          PID    HTTP  FINGERPRINT   TITLE
-5432   postgres         22410  -     -             -
-6379   redis-server     22301  -     -             -
-3000   node             48122  200   nextjs        My App
-8080   api              49100  200   go-service    Dev API
+# reduce title truncation in narrow terminals
+devport-radar --title-width 24
 ```
 
 ## Roadmap
 
-- TUI mode with grouped projects and live health badges
-- Optional reverse-DNS/project labeling
-- Prometheus exporter mode
-- macOS support via `lsof` fallback when `ss` is unavailable
+- [ ] TUI mode with grouped projects and health badges
+- [ ] Project labels/aliases for stable service naming
+- [ ] Prometheus exporter mode
+- [ ] macOS fallback backend (`lsof`) when `ss` is unavailable
 
 ## License
 
