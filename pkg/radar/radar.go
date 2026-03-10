@@ -39,7 +39,7 @@ func Scan(ctx context.Context, timeout time.Duration) ([]Service, error) {
 	}
 
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	services := make([]Service, 0, len(lines))
+	uniq := map[string]Service{}
 	now := time.Now()
 
 	for _, line := range lines {
@@ -52,9 +52,17 @@ func Scan(ctx context.Context, timeout time.Duration) ([]Service, error) {
 		}
 		svc.ScannedAt = now
 		probeHTTP(ctx, &svc, timeout)
-		services = append(services, svc)
+		key := fmt.Sprintf("%d:%d", svc.Port, svc.PID)
+		prev, exists := uniq[key]
+		if !exists || score(svc) > score(prev) {
+			uniq[key] = svc
+		}
 	}
 
+	services := make([]Service, 0, len(uniq))
+	for _, svc := range uniq {
+		services = append(services, svc)
+	}
 	sort.Slice(services, func(i, j int) bool { return services[i].Port < services[j].Port })
 	return services, nil
 }
@@ -155,4 +163,21 @@ func inferFingerprint(s Service) string {
 	default:
 		return "unknown"
 	}
+}
+
+func score(s Service) int {
+	sc := 0
+	if s.PID > 0 {
+		sc += 1
+	}
+	if s.Process != "" {
+		sc += 1
+	}
+	if s.HTTPStatus > 0 {
+		sc += 2
+	}
+	if s.Title != "" {
+		sc += 1
+	}
+	return sc
 }

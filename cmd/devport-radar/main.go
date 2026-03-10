@@ -15,17 +15,27 @@ import (
 
 func main() {
 	var (
-		jsonOut = flag.Bool("json", false, "Print JSON output")
-		timeout = flag.Duration("timeout", 900*time.Millisecond, "HTTP probe timeout")
+		jsonOut   = flag.Bool("json", false, "Print JSON output")
+		timeout   = flag.Duration("timeout", 900*time.Millisecond, "HTTP probe timeout")
+		watch     = flag.Bool("watch", false, "Refresh continuously and show service deltas")
+		intervalS = flag.Int("interval", 5, "Watch refresh interval in seconds")
 	)
 	flag.Parse()
+
+	if *watch {
+		watchLoop(*intervalS, *timeout, *jsonOut)
+		return
+	}
 
 	services, err := radar.Scan(context.Background(), *timeout)
 	if err != nil {
 		exitf("scan failed: %v", err)
 	}
+	printServices(services, *jsonOut)
+}
 
-	if *jsonOut {
+func printServices(services []radar.Service, jsonOut bool) {
+	if jsonOut {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(services); err != nil {
@@ -33,8 +43,43 @@ func main() {
 		}
 		return
 	}
-
 	printTable(services)
+}
+
+func watchLoop(intervalS int, timeout time.Duration, jsonOut bool) {
+	if intervalS <= 0 {
+		intervalS = 5
+	}
+	var prev map[int]radar.Service
+	for {
+		services, err := radar.Scan(context.Background(), timeout)
+		if err != nil {
+			exitf("scan failed: %v", err)
+		}
+		current := map[int]radar.Service{}
+		for _, s := range services {
+			current[s.Port] = s
+		}
+		if prev != nil {
+			printDelta(prev, current)
+		}
+		printServices(services, jsonOut)
+		prev = current
+		time.Sleep(time.Duration(intervalS) * time.Second)
+	}
+}
+
+func printDelta(prev, current map[int]radar.Service) {
+	for p := range current {
+		if _, ok := prev[p]; !ok {
+			fmt.Printf("+ port %d appeared\n", p)
+		}
+	}
+	for p := range prev {
+		if _, ok := current[p]; !ok {
+			fmt.Printf("- port %d disappeared\n", p)
+		}
+	}
 }
 
 func printTable(services []radar.Service) {
