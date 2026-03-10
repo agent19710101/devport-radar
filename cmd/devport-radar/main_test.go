@@ -458,7 +458,7 @@ func TestLoadAliases(t *testing.T) {
 
 func TestRenderPrometheusMetrics(t *testing.T) {
 	metrics := renderPrometheusMetrics([]radar.Service{{Port: 3000, Process: "web", Fingerprint: "vite-dev-server", Alias: "frontend", HTTPStatus: 200}})
-	for _, want := range []string{"devport_radar_services_total 1", "devport_radar_service_up{port=\"3000\"", "alias=\"frontend\"", "devport_radar_service_http_status{"} {
+	for _, want := range []string{"# TYPE devport_radar_service_http_status gauge", "devport_radar_services_total 1", "devport_radar_service_up{port=\"3000\"", "alias=\"frontend\"", "devport_radar_service_http_status{"} {
 		if !strings.Contains(metrics, want) {
 			t.Fatalf("renderPrometheusMetrics() missing %q in %s", want, metrics)
 		}

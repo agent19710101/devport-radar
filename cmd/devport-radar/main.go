@@ -608,6 +608,8 @@ func renderPrometheusMetrics(services []radar.Service) string {
 	b.WriteString(fmt.Sprintf("devport_radar_services_total %d\n", len(services)))
 	b.WriteString("# HELP devport_radar_service_up Service detection marker (always 1 when present).\n")
 	b.WriteString("# TYPE devport_radar_service_up gauge\n")
+	b.WriteString("# HELP devport_radar_service_http_status Last successful HTTP status code observed for a service.\n")
+	b.WriteString("# TYPE devport_radar_service_http_status gauge\n")
 	for _, s := range services {
 		labels := fmt.Sprintf("port=\"%d\",process=\"%s\",fingerprint=\"%s\",alias=\"%s\"", s.Port, esc(s.Process), esc(s.Fingerprint), esc(s.Alias))
 		b.WriteString(fmt.Sprintf("devport_radar_service_up{%s} 1\n", labels))

@@ -10,7 +10,7 @@ Modern local development stacks (apps, databases, queues, agent runtimes, browse
 
 ## Status
 
-- Current release: **v0.6.0**
+- Current release: **v0.6.1**
 - Platform: Linux (`ss`) + macOS fallback (`lsof`)
 - Maturity: early, actively iterating in small releases
 - Merge readiness requires CI matrix (`ubuntu-latest` + `macos-latest`, Go `1.24.x`/`1.25.x`) with `gofmt`, `go vet`, `go test`, and `go test -race` (latest Ubuntu Go lane)
