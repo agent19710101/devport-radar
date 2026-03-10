@@ -12,3 +12,8 @@
 - [ ] TUI dashboard (grouped services + health)
 - [x] macOS backend fallback (`lsof`)
 - [ ] Prometheus exporter endpoint
+- [ ] Service labels/aliases from local config
+
+## Later
+
+- [ ] Agent-runtime profile presets + richer fingerprint hints
