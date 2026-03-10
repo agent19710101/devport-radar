@@ -10,7 +10,7 @@ Modern local development stacks (apps, databases, queues, agent runtimes, browse
 
 ## Status
 
-- Current release: **v0.4.2**
+- Current release: **v0.4.3**
 - Platform: Linux (`ss` backend)
 - Maturity: early, actively iterating in small releases
 - Merge readiness requires CI (`gofmt`, `go vet`, `go test`) on push/PR
