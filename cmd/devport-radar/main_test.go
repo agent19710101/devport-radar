@@ -158,6 +158,45 @@ func TestResolveProbeTimeout(t *testing.T) {
 	}
 }
 
+func TestValidateFlagCombination(t *testing.T) {
+	tests := []struct {
+		name      string
+		watch     bool
+		jsonOut   bool
+		tui       bool
+		strict    bool
+		detect    string
+		intervalS int
+		onlyHTTP  bool
+		noProbe   bool
+		wantErr   bool
+	}{
+		{name: "valid one shot", intervalS: 5},
+		{name: "valid watch tui", watch: true, tui: true, intervalS: 5},
+		{name: "invalid interval", intervalS: 0, wantErr: true},
+		{name: "tui requires watch", tui: true, intervalS: 5, wantErr: true},
+		{name: "strict requires watch", strict: true, intervalS: 5, wantErr: true},
+		{name: "json conflicts with tui", watch: true, jsonOut: true, tui: true, intervalS: 5, wantErr: true},
+		{name: "only-http conflicts with no-http-probe", onlyHTTP: true, noProbe: true, intervalS: 5, wantErr: true},
+		{name: "watch-detect requires watch", detect: "port-process", intervalS: 5, wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateFlagCombination(tc.watch, tc.jsonOut, tc.tui, tc.strict, tc.detect, tc.intervalS, tc.onlyHTTP, tc.noProbe)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("validateFlagCombination() error = %v", err)
+			}
+		})
+	}
+}
+
 func TestParseWatchDetectMode(t *testing.T) {
 	tests := []struct {
 		name    string

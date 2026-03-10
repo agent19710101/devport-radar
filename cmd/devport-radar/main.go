@@ -62,6 +62,9 @@ func main() {
 	if err != nil {
 		exitf("invalid --watch-detect: %v", err)
 	}
+	if err := validateFlagCombination(*watch, *jsonOut, *tui, *watchStrict, *watchDetect, *intervalS, *onlyHTTP, *noHTTPProbe); err != nil {
+		exitf("invalid flag combination: %v", err)
+	}
 
 	probeTimeout := resolveProbeTimeout(*timeout, *noHTTPProbe)
 
@@ -314,6 +317,29 @@ func resolveProbeTimeout(timeout time.Duration, noHTTPProbe bool) time.Duration 
 		return 0
 	}
 	return timeout
+}
+
+func validateFlagCombination(watch, jsonOut, tui, watchStrict bool, watchDetect string, intervalS int, onlyHTTP, noHTTPProbe bool) error {
+	if intervalS <= 0 {
+		return errors.New("--interval must be > 0")
+	}
+	if tui && !watch {
+		return errors.New("--tui requires --watch")
+	}
+	if watchStrict && !watch {
+		return errors.New("--watch-strict requires --watch")
+	}
+	if jsonOut && tui {
+		return errors.New("--tui cannot be combined with --json")
+	}
+	if onlyHTTP && noHTTPProbe {
+		return errors.New("--only-http cannot be combined with --no-http-probe")
+	}
+	normalizedDetect := strings.TrimSpace(strings.ToLower(watchDetect))
+	if !watch && normalizedDetect != "" && normalizedDetect != "port" {
+		return errors.New("--watch-detect requires --watch")
+	}
+	return nil
 }
 
 func parseWatchDetectMode(raw string) (string, error) {

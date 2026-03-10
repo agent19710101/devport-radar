@@ -10,7 +10,7 @@ Modern local development stacks (apps, databases, queues, agent runtimes, browse
 
 ## Status
 
-- Current release: **v0.5.0**
+- Current release: **v0.5.1**
 - Platform: Linux (`ss`) + macOS fallback (`lsof`)
 - Maturity: early, actively iterating in small releases
 - Merge readiness requires CI matrix (`go1.24.x`, `go1.25.x`) with `gofmt`, `go vet`, `go test`, and `go test -race` (latest Go)
@@ -176,6 +176,13 @@ Each line is a JSON object with:
 
 - NDJSON includes `error` events; consumers should handle and continue unless strict mode is enabled
 - Use `--watch-detect port-process` if process restarts on the same port should be treated as changes
+
+### Flag combination validation
+
+- `--tui`, `--watch-strict`, and non-default `--watch-detect` require `--watch`
+- `--tui` cannot be combined with `--json`
+- `--only-http` cannot be combined with `--no-http-probe`
+- `--interval` must be greater than zero
 
 ## Roadmap
 
