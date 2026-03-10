@@ -25,7 +25,7 @@ Modern local development stacks (apps, databases, queues, agent runtimes, browse
 - Output in table or JSON
 - Watch mode with appear/disappear delta logs
 - Configurable watch change detection (`--watch-detect port|port-process`)
-- Structured watch JSON mode (`--watch --json`) emitting NDJSON `appeared`/`disappeared`/`snapshot` events
+- Structured watch JSON mode (`--watch --json`) emitting NDJSON `appeared`/`disappeared`/`snapshot`/`error` events
 - Focus scans via `--ports` list/range filter
 - Limit output to responsive HTTP services via `--only-http`
 - Optional probe bypass via `--no-http-probe` for faster port/process inventory
@@ -114,16 +114,22 @@ devport-radar --title-width 24
 
 Each line is a JSON object with:
 
-- `type`: `appeared` | `disappeared` | `snapshot`
+- `type`: `appeared` | `disappeared` | `snapshot` | `error`
 - `timestamp`: RFC3339 time
 - `port`: present for delta events
 - `service`: present for delta events
 - `services`: present for `snapshot` events
+- `error`: present for `error` events
 
 ### `--watch-detect`
 
 - `port` (default): identity is only the port; process restarts on same port are not emitted as changes.
 - `port-process`: identity is `port+pid` (fallback `port+process`), so process swaps on the same port are emitted.
+
+### `--watch-strict`
+
+- Default watch behavior is resilient: transient scan failures are emitted/logged and the next tick retries.
+- Set `--watch-strict` to fail-fast and exit on the first scan error.
 
 ### `--no-http-probe`
 
@@ -135,7 +141,7 @@ Each line is a JSON object with:
 ```bash
 # print newly appeared ports in watch mode
 (devport-radar --watch --json --interval 2 \
-  | jq -r 'select(.type=="appeared") | .service.Port')
+  | jq -r 'select(.type=="appeared") | .service.port')
 ```
 
 ## Roadmap

@@ -24,6 +24,7 @@ type watchEvent struct {
 	Port      int             `json:"port,omitempty"`
 	Service   *radar.Service  `json:"service,omitempty"`
 	Services  []radar.Service `json:"services,omitempty"`
+	Error     string          `json:"error,omitempty"`
 	Timestamp time.Time       `json:"timestamp"`
 }
 
@@ -37,6 +38,7 @@ func main() {
 		watch       = flag.Bool("watch", false, "Refresh continuously and show service deltas")
 		intervalS   = flag.Int("interval", 5, "Watch refresh interval in seconds")
 		watchDetect = flag.String("watch-detect", "port", "Change detection mode: port or port-process")
+		watchStrict = flag.Bool("watch-strict", false, "Fail fast in watch mode on first scan error")
 		ports       = flag.String("ports", "", "Optional port filter list/ranges (e.g. 3000,5432,8000-8010)")
 		titleWidth  = flag.Int("title-width", 42, "Max title width for table output")
 		onlyHTTP    = flag.Bool("only-http", false, "Show only services with successful HTTP probe response")
@@ -60,7 +62,7 @@ func main() {
 	if *watch {
 		watchCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		if err := watchLoop(watchCtx, *intervalS, probeTimeout, *jsonOut, filter, *onlyHTTP, *titleWidth, detectMode, radar.Scan, nil, nil); err != nil {
+		if err := watchLoop(watchCtx, *intervalS, probeTimeout, *jsonOut, *watchStrict, filter, *onlyHTTP, *titleWidth, detectMode, radar.Scan, nil, nil); err != nil {
 			exitf("watch failed: %v", err)
 		}
 		return
@@ -91,6 +93,7 @@ func watchLoop(
 	intervalS int,
 	timeout time.Duration,
 	jsonOut bool,
+	watchStrict bool,
 	filter map[int]struct{},
 	onlyHTTP bool,
 	titleWidth int,
@@ -136,7 +139,18 @@ func watchLoop(
 	runOnce := func() error {
 		services, err := scan(ctx, timeout)
 		if err != nil {
-			return fmt.Errorf("scan failed: %w", err)
+			if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+				return nil
+			}
+			if watchStrict {
+				return fmt.Errorf("scan failed: %w", err)
+			}
+			if jsonOut {
+				printWatchErrorJSON(err)
+			} else {
+				fmt.Fprintf(os.Stderr, "watch scan error: %v\n", err)
+			}
+			return nil
 		}
 		services = filterServices(services, filter, onlyHTTP)
 		current := serviceIndex(services, detectMode)
@@ -180,6 +194,10 @@ func printDeltaJSON(prev, current map[string]radar.Service) {
 
 func printWatchSnapshotJSON(services []radar.Service) {
 	printJSON(watchEvent{Type: "snapshot", Services: services, Timestamp: time.Now()})
+}
+
+func printWatchErrorJSON(err error) {
+	printJSON(watchEvent{Type: "error", Error: err.Error(), Timestamp: time.Now()})
 }
 
 func printJSON(v any) {
