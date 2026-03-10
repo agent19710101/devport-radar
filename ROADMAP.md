@@ -9,7 +9,7 @@
 
 ## Mid term
 
-- [ ] TUI dashboard (grouped services + health)
+- [x] TUI dashboard mode (`--watch --tui`)
 - [x] macOS backend fallback (`lsof`)
 - [ ] Prometheus exporter endpoint
 - [ ] Service labels/aliases from local config

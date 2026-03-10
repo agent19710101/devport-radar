@@ -211,6 +211,18 @@ func TestServiceKeyPortProcess(t *testing.T) {
 	}
 }
 
+func TestRenderDashboard(t *testing.T) {
+	ts := time.Date(2026, 3, 10, 9, 30, 0, 0, time.UTC)
+	services := []radar.Service{{Port: 8080, Process: "dev-server", PID: 4321, HTTPStatus: 200, Fingerprint: "http-service", Title: "Dashboard"}}
+
+	got := renderDashboard(services, 42, ts)
+	for _, want := range []string{"\x1b[2J\x1b[H", "devport-radar dashboard", ts.Format(time.RFC3339), "services: 1", "Press Ctrl+C to stop."} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("renderDashboard() missing %q in output: %s", want, got)
+		}
+	}
+}
+
 func TestRenderTableGolden(t *testing.T) {
 	services := []radar.Service{
 		{Port: 3000, Process: "node", PID: 9123, HTTPStatus: 200, Fingerprint: "vite", Title: "Frontend Dashboard"},
@@ -251,7 +263,7 @@ func TestWatchLoopCancellation(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- watchLoop(ctx, 5, time.Second, false, false, nil, false, 42, "port", scan, ticks, emit)
+		errCh <- watchLoop(ctx, 5, time.Second, false, false, false, nil, false, 42, "port", scan, ticks, emit)
 	}()
 
 	ticks <- time.Now()
@@ -297,7 +309,7 @@ func TestWatchLoopContinuesAfterTransientScanError(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- watchLoop(ctx, 5, time.Second, false, false, nil, false, 42, "port", scan, ticks, emit)
+		errCh <- watchLoop(ctx, 5, time.Second, false, false, false, nil, false, 42, "port", scan, ticks, emit)
 	}()
 
 	ticks <- time.Now()
@@ -324,7 +336,7 @@ func TestWatchLoopStrictModePropagatesScanError(t *testing.T) {
 	scan := func(context.Context, time.Duration) ([]radar.Service, error) {
 		return nil, context.DeadlineExceeded
 	}
-	err := watchLoop(context.Background(), 5, time.Second, false, true, nil, false, 42, "port", scan, make(chan time.Time), nil)
+	err := watchLoop(context.Background(), 5, time.Second, false, false, true, nil, false, 42, "port", scan, make(chan time.Time), nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}

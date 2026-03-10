@@ -10,7 +10,7 @@ Modern local development stacks (apps, databases, queues, agent runtimes, browse
 
 ## Status
 
-- Current release: **v0.4.8**
+- Current release: **v0.5.0**
 - Platform: Linux (`ss`) + macOS fallback (`lsof`)
 - Maturity: early, actively iterating in small releases
 - Merge readiness requires CI matrix (`go1.24.x`, `go1.25.x`) with `gofmt`, `go vet`, `go test`, and `go test -race` (latest Go)
@@ -26,6 +26,7 @@ Modern local development stacks (apps, databases, queues, agent runtimes, browse
 - Watch mode with appear/disappear delta logs
 - Configurable watch change detection (`--watch-detect port|port-process`)
 - Structured watch JSON mode (`--watch --json`) emitting NDJSON `appeared`/`disappeared`/`snapshot`/`error` events
+- Minimal terminal dashboard mode (`--watch --tui`) for live refresh in-place
 - Focus scans via `--ports` list/range filter or `--profile` presets (`agent|web|data`)
 - Limit output to responsive HTTP services via `--only-http`
 - Optional probe bypass via `--no-http-probe` for faster port/process inventory
@@ -83,6 +84,9 @@ devport-radar --no-http-probe
 # live mode every 3 seconds
 devport-radar --watch --interval 3
 
+# minimal terminal dashboard mode (auto-refresh in place)
+devport-radar --watch --tui --interval 3
+
 # reduce title truncation in narrow terminals
 devport-radar --title-width 24
 ```
@@ -135,6 +139,11 @@ Each line is a JSON object with:
 - Default watch behavior is resilient: transient scan failures are emitted/logged and the next tick retries.
 - Set `--watch-strict` to fail-fast and exit on the first scan error.
 
+### `--tui`
+
+- Valid with `--watch`; renders a minimal terminal dashboard with clear-screen redraws.
+- Intended for interactive use (not machine-readable pipelines).
+
 ### `--no-http-probe`
 
 - Disables all HTTP GET probing and fingerprint enrichment.
@@ -170,7 +179,7 @@ Each line is a JSON object with:
 
 ## Roadmap
 
-- [ ] TUI mode with grouped projects and health badges
+- [x] Minimal TUI mode (`--watch --tui`)
 - [ ] Project labels/aliases for stable service naming
 - [ ] Prometheus exporter mode
 - [x] macOS fallback backend (`lsof`) when `ss` is unavailable

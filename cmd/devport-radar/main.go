@@ -44,6 +44,7 @@ func main() {
 		titleWidth  = flag.Int("title-width", 42, "Max title width for table output")
 		onlyHTTP    = flag.Bool("only-http", false, "Show only services with successful HTTP probe response")
 		noHTTPProbe = flag.Bool("no-http-probe", false, "Disable HTTP probing for faster port/process-only scans")
+		tui         = flag.Bool("tui", false, "Render watch output as a minimal terminal dashboard")
 	)
 	flag.Parse()
 
@@ -68,7 +69,7 @@ func main() {
 	if *watch {
 		watchCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		if err := watchLoop(watchCtx, *intervalS, probeTimeout, *jsonOut, *watchStrict, filter, *onlyHTTP, *titleWidth, detectMode, radar.Scan, nil, nil); err != nil {
+		if err := watchLoop(watchCtx, *intervalS, probeTimeout, *jsonOut, *tui, *watchStrict, filter, *onlyHTTP, *titleWidth, detectMode, radar.Scan, nil, nil); err != nil {
 			exitf("watch failed: %v", err)
 		}
 		return
@@ -99,6 +100,7 @@ func watchLoop(
 	intervalS int,
 	timeout time.Duration,
 	jsonOut bool,
+	tui bool,
 	watchStrict bool,
 	filter map[int]struct{},
 	onlyHTTP bool,
@@ -121,6 +123,10 @@ func watchLoop(
 					printDeltaJSON(prev, current)
 				}
 				printWatchSnapshotJSON(services)
+				return
+			}
+			if tui {
+				fmt.Fprint(os.Stdout, renderDashboard(services, titleWidth, time.Now()))
 				return
 			}
 			if prev != nil {
@@ -278,6 +284,16 @@ func renderTable(services []radar.Service, titleWidth int) string {
 		fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\n", s.Port, proc, pid, httpStatus, fp, title)
 	}
 	_ = tw.Flush()
+	return b.String()
+}
+
+func renderDashboard(services []radar.Service, titleWidth int, now time.Time) string {
+	var b bytes.Buffer
+	b.WriteString("\x1b[2J\x1b[H")
+	fmt.Fprintf(&b, "devport-radar dashboard  |  %s\n", now.Format(time.RFC3339))
+	fmt.Fprintf(&b, "services: %d\n\n", len(services))
+	b.WriteString(renderTable(services, titleWidth))
+	b.WriteString("\nPress Ctrl+C to stop.\n")
 	return b.String()
 }
 
