@@ -7,6 +7,14 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - go-version: "1.24.x"
+            race: false
+          - go-version: "1.25.x"
+            race: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -14,14 +22,17 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: ${{ matrix.go-version }}
 
       - name: Verify formatting
-        run: |
-          test -z "$(gofmt -l .)"
+        run: test -z "$(gofmt -l .)"
 
       - name: Vet
         run: go vet ./...
 
       - name: Test
         run: go test ./...
+
+      - name: Race test
+        if: matrix.race
+        run: go test -race ./...

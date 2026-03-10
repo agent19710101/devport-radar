@@ -13,7 +13,7 @@ Modern local development stacks (apps, databases, queues, agent runtimes, browse
 - Current release: **v0.4.3**
 - Platform: Linux (`ss` backend)
 - Maturity: early, actively iterating in small releases
-- Merge readiness requires CI (`gofmt`, `go vet`, `go test`) on push/PR
+- Merge readiness requires CI matrix (`go1.24.x`, `go1.25.x`) with `gofmt`, `go vet`, `go test`, and `go test -race` (latest Go)
 
 ## Features
 
@@ -143,6 +143,25 @@ Each line is a JSON object with:
 (devport-radar --watch --json --interval 2 \
   | jq -r 'select(.type=="appeared") | .service.port')
 ```
+
+## Troubleshooting
+
+### `scan failed` or empty output
+
+- Ensure `ss` is available and working: `ss -ltnpH`
+- Run with sufficient privileges if process/PID fields are empty (some distros restrict process metadata)
+- If you only need listener inventory, bypass probes: `devport-radar --no-http-probe`
+
+### HTTP probe false negatives
+
+- Increase timeout for slower local services: `devport-radar --timeout 2s`
+- Use `--only-http` only when you explicitly want probe-positive services
+- For transient watch-time probe/scan errors, default mode retries automatically; use `--watch-strict` only for fail-fast automation
+
+### Watch mode automation
+
+- NDJSON includes `error` events; consumers should handle and continue unless strict mode is enabled
+- Use `--watch-detect port-process` if process restarts on the same port should be treated as changes
 
 ## Roadmap
 

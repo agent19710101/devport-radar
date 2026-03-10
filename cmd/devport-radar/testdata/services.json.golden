@@ -1,0 +1,14 @@
+[
+  {
+    "port": 8080,
+    "protocol": "tcp",
+    "process": "dev-server",
+    "pid": 4321,
+    "bind": "127.0.0.1",
+    "http_status": 200,
+    "title": "Dashboard",
+    "server": "Caddy",
+    "fingerprint": "http-service",
+    "scanned_at": "2026-03-10T07:30:00Z"
+  }
+]

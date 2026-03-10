@@ -1,0 +1,3 @@
+{"type":"appeared","port":8080,"service":{"port":8080,"protocol":"","process":"dev-server","pid":4321,"bind":"","scanned_at":"0001-01-01T00:00:00Z"},"timestamp":"2026-03-10T07:30:00Z"}
+{"type":"snapshot","services":[{"port":8080,"protocol":"","process":"dev-server","pid":4321,"bind":"","scanned_at":"0001-01-01T00:00:00Z"}],"timestamp":"2026-03-10T07:30:00Z"}
+{"type":"error","error":"scan timeout","timestamp":"2026-03-10T07:30:00Z"}

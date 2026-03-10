@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -279,4 +282,87 @@ func TestWatchLoopStrictModePropagatesScanError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
+}
+
+func TestJSONSnapshotContractGolden(t *testing.T) {
+	services := []radar.Service{{
+		Port:        8080,
+		Protocol:    "tcp",
+		Bind:        "127.0.0.1",
+		Process:     "dev-server",
+		PID:         4321,
+		HTTPStatus:  200,
+		Server:      "Caddy",
+		Title:       "Dashboard",
+		Fingerprint: "http-service",
+		ScannedAt:   time.Date(2026, 3, 10, 7, 30, 0, 0, time.UTC),
+	}}
+
+	got := captureStdout(t, func() { printServices(services, true, 42) })
+	want := readGolden(t, filepath.Join("testdata", "services.json.golden"))
+	if got != want {
+		t.Fatalf("json contract mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+func TestWatchNDJSONContractGolden(t *testing.T) {
+	ts := time.Date(2026, 3, 10, 7, 30, 0, 0, time.UTC)
+	svc := radar.Service{Port: 8080, Process: "dev-server", PID: 4321}
+
+	got := captureStdout(t, func() {
+		printJSON(watchEvent{Type: "appeared", Port: 8080, Service: &svc, Timestamp: ts})
+		printJSON(watchEvent{Type: "snapshot", Services: []radar.Service{svc}, Timestamp: ts})
+		printJSON(watchEvent{Type: "error", Error: "scan timeout", Timestamp: ts})
+	})
+	want := readGolden(t, filepath.Join("testdata", "watch-events.ndjson.golden"))
+	if got != want {
+		t.Fatalf("ndjson contract mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+
+	for _, line := range strings.Split(strings.TrimSpace(got), "\n") {
+		var obj map[string]any
+		if err := json.Unmarshal([]byte(line), &obj); err != nil {
+			t.Fatalf("invalid ndjson line %q: %v", line, err)
+		}
+		if _, ok := obj["type"]; !ok {
+			t.Fatalf("event missing type: %q", line)
+		}
+		if _, ok := obj["timestamp"]; !ok {
+			t.Fatalf("event missing timestamp: %q", line)
+		}
+	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	orig := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = w
+	defer func() { os.Stdout = orig }()
+
+	fn()
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Fatalf("read pipe: %v", err)
+	}
+	if err := r.Close(); err != nil {
+		t.Fatalf("close reader: %v", err)
+	}
+	return buf.String()
+}
+
+func readGolden(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read golden %s: %v", path, err)
+	}
+	return string(b)
 }
