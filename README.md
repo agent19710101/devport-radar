@@ -10,7 +10,7 @@ Modern local development stacks (apps, databases, queues, agent runtimes, browse
 
 ## Status
 
-- Current release: **v0.1.0**
+- Current release: **v0.2.0**
 - Platform: Linux (`ss` backend)
 - Maturity: early, actively iterating in small releases
 
@@ -23,6 +23,7 @@ Modern local development stacks (apps, databases, queues, agent runtimes, browse
 - Capture HTTP status, `Server`, page `<title>`, and coarse fingerprint
 - Output in table or JSON
 - Watch mode with appear/disappear delta logs
+- Structured watch JSON mode (`--watch --json`) emitting NDJSON `appeared`/`disappeared`/`snapshot` events
 - Focus scans via `--ports` list/range filter
 
 ## Install
@@ -47,8 +48,11 @@ go build ./cmd/devport-radar
 # one-shot table output
 devport-radar
 
-# output as json
+# output as json (single snapshot array)
 devport-radar --json
+
+# watch as NDJSON events (appeared/disappeared + snapshot)
+devport-radar --watch --json --interval 3
 
 # probe only common app ports
 devport-radar --ports 3000,5173,8080,5432

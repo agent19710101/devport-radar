@@ -16,6 +16,14 @@ import (
 	"github.com/agent19710101/devport-radar/pkg/radar"
 )
 
+type watchEvent struct {
+	Type      string          `json:"type"`
+	Port      int             `json:"port,omitempty"`
+	Service   *radar.Service  `json:"service,omitempty"`
+	Services  []radar.Service `json:"services,omitempty"`
+	Timestamp time.Time       `json:"timestamp"`
+}
+
 func main() {
 	var (
 		jsonOut    = flag.Bool("json", false, "Print JSON output")
@@ -72,26 +80,73 @@ func watchLoop(intervalS int, timeout time.Duration, jsonOut bool, filter map[in
 		for _, s := range services {
 			current[s.Port] = s
 		}
-		if prev != nil {
-			printDelta(prev, current)
+
+		if jsonOut {
+			if prev != nil {
+				printDeltaJSON(prev, current)
+			}
+			printWatchSnapshotJSON(services)
+		} else {
+			if prev != nil {
+				printDelta(prev, current)
+			}
+			printTable(services, titleWidth)
 		}
-		printServices(services, jsonOut, titleWidth)
+
 		prev = current
 		time.Sleep(time.Duration(intervalS) * time.Second)
 	}
 }
 
 func printDelta(prev, current map[int]radar.Service) {
-	for p := range current {
+	for _, ev := range buildDeltaEvents(prev, current) {
+		if ev.Type == "appeared" {
+			fmt.Printf("+ port %d appeared\n", ev.Port)
+			continue
+		}
+		fmt.Printf("- port %d disappeared\n", ev.Port)
+	}
+}
+
+func printDeltaJSON(prev, current map[int]radar.Service) {
+	events := buildDeltaEvents(prev, current)
+	for _, ev := range events {
+		printJSON(ev)
+	}
+}
+
+func printWatchSnapshotJSON(services []radar.Service) {
+	printJSON(watchEvent{Type: "snapshot", Services: services, Timestamp: time.Now()})
+}
+
+func printJSON(v any) {
+	enc := json.NewEncoder(os.Stdout)
+	if err := enc.Encode(v); err != nil {
+		exitf("encode json: %v", err)
+	}
+}
+
+func buildDeltaEvents(prev, current map[int]radar.Service) []watchEvent {
+	events := make([]watchEvent, 0)
+	for p, s := range current {
 		if _, ok := prev[p]; !ok {
-			fmt.Printf("+ port %d appeared\n", p)
+			svc := s
+			events = append(events, watchEvent{Type: "appeared", Port: p, Service: &svc, Timestamp: time.Now()})
 		}
 	}
-	for p := range prev {
+	for p, s := range prev {
 		if _, ok := current[p]; !ok {
-			fmt.Printf("- port %d disappeared\n", p)
+			svc := s
+			events = append(events, watchEvent{Type: "disappeared", Port: p, Service: &svc, Timestamp: time.Now()})
 		}
 	}
+	sort.Slice(events, func(i, j int) bool {
+		if events[i].Type == events[j].Type {
+			return events[i].Port < events[j].Port
+		}
+		return events[i].Type < events[j].Type
+	})
+	return events
 }
 
 func printTable(services []radar.Service, titleWidth int) {

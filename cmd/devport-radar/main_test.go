@@ -54,3 +54,28 @@ func TestFilterServices(t *testing.T) {
 		t.Fatalf("unexpected order/ports: %+v", got)
 	}
 }
+
+func TestBuildDeltaEvents(t *testing.T) {
+	prev := map[int]radar.Service{
+		3000: {Port: 3000, Process: "node"},
+		5432: {Port: 5432, Process: "postgres"},
+	}
+	current := map[int]radar.Service{
+		3000: {Port: 3000, Process: "node"},
+		8080: {Port: 8080, Process: "go-app"},
+	}
+
+	events := buildDeltaEvents(prev, current)
+	if len(events) != 2 {
+		t.Fatalf("len(buildDeltaEvents()) = %d, want 2", len(events))
+	}
+	if events[0].Type != "appeared" || events[0].Port != 8080 {
+		t.Fatalf("first event = %+v, want appeared 8080", events[0])
+	}
+	if events[1].Type != "disappeared" || events[1].Port != 5432 {
+		t.Fatalf("second event = %+v, want disappeared 5432", events[1])
+	}
+	if events[0].Service == nil || events[0].Service.Process != "go-app" {
+		t.Fatalf("appeared service mismatch: %+v", events[0].Service)
+	}
+}

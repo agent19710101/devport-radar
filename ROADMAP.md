@@ -3,8 +3,9 @@
 ## Near term
 
 - [x] Port-focused scan filter (`--ports` list/range)
-- [ ] Structured watch delta output mode (`--json` + events)
+- [x] Structured watch delta output mode (`--watch --json` emits NDJSON events)
 - [ ] Golden tests for table rendering behavior
+- [ ] Configurable watch change detection mode (port-only vs process+port)
 
 ## Mid term
 
