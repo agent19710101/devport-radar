@@ -40,6 +40,7 @@ func main() {
 		ports       = flag.String("ports", "", "Optional port filter list/ranges (e.g. 3000,5432,8000-8010)")
 		titleWidth  = flag.Int("title-width", 42, "Max title width for table output")
 		onlyHTTP    = flag.Bool("only-http", false, "Show only services with successful HTTP probe response")
+		noHTTPProbe = flag.Bool("no-http-probe", false, "Disable HTTP probing for faster port/process-only scans")
 	)
 	flag.Parse()
 
@@ -53,17 +54,19 @@ func main() {
 		exitf("invalid --watch-detect: %v", err)
 	}
 
+	probeTimeout := resolveProbeTimeout(*timeout, *noHTTPProbe)
+
 	ctx := context.Background()
 	if *watch {
 		watchCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		if err := watchLoop(watchCtx, *intervalS, *timeout, *jsonOut, filter, *onlyHTTP, *titleWidth, detectMode, radar.Scan, nil, nil); err != nil {
+		if err := watchLoop(watchCtx, *intervalS, probeTimeout, *jsonOut, filter, *onlyHTTP, *titleWidth, detectMode, radar.Scan, nil, nil); err != nil {
 			exitf("watch failed: %v", err)
 		}
 		return
 	}
 
-	services, err := radar.Scan(ctx, *timeout)
+	services, err := radar.Scan(ctx, probeTimeout)
 	if err != nil {
 		exitf("scan failed: %v", err)
 	}
@@ -264,6 +267,13 @@ func compact(s string, max int) string {
 
 func intString(v int) string {
 	return fmt.Sprintf("%d", v)
+}
+
+func resolveProbeTimeout(timeout time.Duration, noHTTPProbe bool) time.Duration {
+	if noHTTPProbe {
+		return 0
+	}
+	return timeout
 }
 
 func parseWatchDetectMode(raw string) (string, error) {

@@ -99,6 +99,16 @@ func TestBuildDeltaEvents(t *testing.T) {
 	}
 }
 
+func TestResolveProbeTimeout(t *testing.T) {
+	base := 900 * time.Millisecond
+	if got := resolveProbeTimeout(base, false); got != base {
+		t.Fatalf("resolveProbeTimeout() = %v, want %v", got, base)
+	}
+	if got := resolveProbeTimeout(base, true); got != 0 {
+		t.Fatalf("resolveProbeTimeout() = %v, want 0", got)
+	}
+}
+
 func TestParseWatchDetectMode(t *testing.T) {
 	tests := []struct {
 		name    string

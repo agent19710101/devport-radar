@@ -10,7 +10,7 @@ Modern local development stacks (apps, databases, queues, agent runtimes, browse
 
 ## Status
 
-- Current release: **v0.4.1**
+- Current release: **v0.4.2**
 - Platform: Linux (`ss` backend)
 - Maturity: early, actively iterating in small releases
 - Merge readiness requires CI (`gofmt`, `go vet`, `go test`) on push/PR
@@ -28,6 +28,7 @@ Modern local development stacks (apps, databases, queues, agent runtimes, browse
 - Structured watch JSON mode (`--watch --json`) emitting NDJSON `appeared`/`disappeared`/`snapshot` events
 - Focus scans via `--ports` list/range filter
 - Limit output to responsive HTTP services via `--only-http`
+- Optional probe bypass via `--no-http-probe` for faster port/process inventory
 
 ## Install
 
@@ -71,6 +72,9 @@ devport-radar --timeout 600ms
 
 # show only endpoints with HTTP responses
 devport-radar --only-http
+
+# skip HTTP probing for faster socket/process-only scans
+devport-radar --no-http-probe
 
 # live mode every 3 seconds
 devport-radar --watch --interval 3
@@ -120,6 +124,11 @@ Each line is a JSON object with:
 
 - `port` (default): identity is only the port; process restarts on same port are not emitted as changes.
 - `port-process`: identity is `port+pid` (fallback `port+process`), so process swaps on the same port are emitted.
+
+### `--no-http-probe`
+
+- Disables all HTTP GET probing and fingerprint enrichment.
+- Output still includes listener/process metadata (`port`, `process`, `pid`, `bind`, `scanned_at`).
 
 ### Script example (jq)
 

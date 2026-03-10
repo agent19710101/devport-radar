@@ -50,6 +50,14 @@ func TestInferFingerprint(t *testing.T) {
 	}
 }
 
+func TestProbeHTTPSkipsWhenTimeoutDisabled(t *testing.T) {
+	svc := Service{Port: 3000, Bind: "127.0.0.1:3000"}
+	probeHTTP(t.Context(), &svc, 0)
+	if svc.HTTPStatus != 0 || svc.Title != "" || svc.Server != "" || svc.Fingerprint != "" {
+		t.Fatalf("probeHTTP should skip mutation when timeout disabled, got %+v", svc)
+	}
+}
+
 func TestProbeTargetsPrefersBindHost(t *testing.T) {
 	targets := probeTargets("192.168.1.9:7777", 7777)
 	if len(targets) == 0 {

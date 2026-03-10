@@ -105,7 +105,7 @@ func parsePort(local string) int {
 }
 
 func probeHTTP(ctx context.Context, svc *Service, timeout time.Duration) {
-	if svc.Port == 0 {
+	if svc.Port == 0 || timeout <= 0 {
 		return
 	}
 
