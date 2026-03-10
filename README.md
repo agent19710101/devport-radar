@@ -19,7 +19,7 @@ Modern local development stacks (apps, databases, queues, agent runtimes, browse
 - Scan local listening TCP sockets via `ss -ltnpH`
 - Dedupe duplicate listeners (e.g., IPv4/IPv6 overlap)
 - Resolve process name + PID when available
-- Probe `http://127.0.0.1:<port>` with configurable timeout
+- Probe multiple local targets per port (bind host + loopbacks) with configurable timeout
 - Capture HTTP status, `Server`, page `<title>`, and coarse fingerprint
 - Output in table or JSON
 - Watch mode with appear/disappear delta logs

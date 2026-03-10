@@ -1,6 +1,9 @@
 package radar
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func TestParsePort(t *testing.T) {
 	tests := []struct {
@@ -43,6 +46,30 @@ func TestInferFingerprint(t *testing.T) {
 	for _, tc := range tests {
 		if got := inferFingerprint(tc.s); got != tc.want {
 			t.Fatalf("inferFingerprint(%s) = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestProbeTargetsPrefersBindHost(t *testing.T) {
+	targets := probeTargets("192.168.1.9:7777", 7777)
+	if len(targets) == 0 {
+		t.Fatalf("expected targets")
+	}
+	if targets[0] != "http://192.168.1.9:7777" {
+		t.Fatalf("first target = %q, want bind host target", targets[0])
+	}
+}
+
+func TestProbeTargetsIncludeLoopbacksForWildcardBind(t *testing.T) {
+	targets := probeTargets("*:5432", 5432)
+	want := []string{
+		"http://127.0.0.1:5432",
+		"http://localhost:5432",
+		"http://[::1]:5432",
+	}
+	for _, w := range want {
+		if !slices.Contains(targets, w) {
+			t.Fatalf("targets %v missing %q", targets, w)
 		}
 	}
 }

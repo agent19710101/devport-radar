@@ -108,33 +108,84 @@ func probeHTTP(ctx context.Context, svc *Service, timeout time.Duration) {
 	if svc.Port == 0 {
 		return
 	}
-	url := fmt.Sprintf("http://127.0.0.1:%d", svc.Port)
-	reqCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
-	if err != nil {
-		return
-	}
 	client := &http.Client{Timeout: timeout}
-	resp, err := client.Do(req)
-	if err != nil {
+	for _, url := range probeTargets(svc.Bind, svc.Port) {
+		reqCtx, cancel := context.WithTimeout(ctx, timeout)
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
+		if err != nil {
+			cancel()
+			continue
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			cancel()
+			continue
+		}
+
+		svc.HTTPStatus = resp.StatusCode
+		svc.Server = resp.Header.Get("Server")
+
+		buf := make([]byte, 4096)
+		n, _ := bufio.NewReader(resp.Body).Read(buf)
+		_ = resp.Body.Close()
+		cancel()
+
+		chunk := strings.TrimSpace(string(bytes.TrimSpace(buf[:n])))
+		if chunk != "" {
+			if t := extractTitle(chunk); t != "" {
+				svc.Title = t
+			}
+		}
+		svc.Fingerprint = inferFingerprint(*svc)
 		return
 	}
-	defer resp.Body.Close()
+}
 
-	svc.HTTPStatus = resp.StatusCode
-	svc.Server = resp.Header.Get("Server")
-
-	buf := make([]byte, 4096)
-	n, _ := bufio.NewReader(resp.Body).Read(buf)
-	chunk := strings.TrimSpace(string(bytes.TrimSpace(buf[:n])))
-	if chunk != "" {
-		if t := extractTitle(chunk); t != "" {
-			svc.Title = t
+func probeTargets(bind string, port int) []string {
+	hosts := make([]string, 0, 4)
+	seen := make(map[string]struct{})
+	addHost := func(h string) {
+		h = strings.TrimSpace(h)
+		if h == "" {
+			return
 		}
+		if _, ok := seen[h]; ok {
+			return
+		}
+		seen[h] = struct{}{}
+		hosts = append(hosts, h)
 	}
-	svc.Fingerprint = inferFingerprint(*svc)
+
+	host := bindHost(bind)
+	switch host {
+	case "", "*", "0.0.0.0", "::", "[::]":
+		// wildcard/unknown bind; rely on local loopbacks.
+	default:
+		addHost(host)
+	}
+
+	addHost("127.0.0.1")
+	addHost("localhost")
+	addHost("::1")
+
+	urls := make([]string, 0, len(hosts))
+	for _, h := range hosts {
+		urls = append(urls, fmt.Sprintf("http://%s", net.JoinHostPort(h, strconv.Itoa(port))))
+	}
+	return urls
+}
+
+func bindHost(bind string) string {
+	host, _, err := net.SplitHostPort(bind)
+	if err == nil {
+		return strings.Trim(host, "[]")
+	}
+	idx := strings.LastIndex(bind, ":")
+	if idx <= 0 {
+		return ""
+	}
+	return strings.Trim(bind[:idx], "[]")
 }
 
 func extractTitle(body string) string {
