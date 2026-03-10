@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"os/exec"
 	"slices"
 	"strings"
 	"testing"
@@ -141,7 +140,7 @@ func TestScanListenersWithRunnerFallsBackToLsof(t *testing.T) {
 	run := func(_ context.Context, name string, _ ...string) ([]byte, error) {
 		switch name {
 		case "ss":
-			return nil, exec.ErrNotFound
+			return nil, errors.New("permission denied")
 		case "lsof":
 			return []byte("COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\nnode 12345 user 22u IPv4 0x1234 0t0 TCP 127.0.0.1:3000 (LISTEN)\n"), nil
 		default:
@@ -158,16 +157,16 @@ func TestScanListenersWithRunnerFallsBackToLsof(t *testing.T) {
 	}
 }
 
-func TestScanListenersWithRunnerReturnsSSError(t *testing.T) {
+func TestScanListenersWithRunnerReturnsCombinedErrorWhenBothBackendsFail(t *testing.T) {
 	run := func(_ context.Context, name string, _ ...string) ([]byte, error) {
 		if name == "ss" {
 			return nil, errors.New("permission denied")
 		}
-		return nil, nil
+		return nil, errors.New("lsof unavailable")
 	}
 
 	_, err := scanListenersWithRunner(t.Context(), run)
-	if err == nil || !strings.Contains(err.Error(), "run ss") {
-		t.Fatalf("expected ss error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "run ss") || !strings.Contains(err.Error(), "run lsof fallback") {
+		t.Fatalf("expected combined backend error, got %v", err)
 	}
 }

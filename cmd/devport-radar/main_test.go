@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/agent19710101/devport-radar/pkg/radar"
 )
@@ -108,6 +111,28 @@ func TestFilterServices(t *testing.T) {
 	}
 }
 
+func TestSortServices(t *testing.T) {
+	services := []radar.Service{{Port: 8080, Process: "b", HTTPStatus: 200}, {Port: 3000, Process: "a", HTTPStatus: 404}, {Port: 5432, Process: "c", HTTPStatus: 0}}
+
+	copy1 := append([]radar.Service(nil), services...)
+	sortServices(copy1, "port")
+	if copy1[0].Port != 3000 || copy1[2].Port != 8080 {
+		t.Fatalf("port sort wrong: %+v", copy1)
+	}
+
+	copy2 := append([]radar.Service(nil), services...)
+	sortServices(copy2, "process")
+	if copy2[0].Process != "a" || copy2[2].Process != "c" {
+		t.Fatalf("process sort wrong: %+v", copy2)
+	}
+
+	copy3 := append([]radar.Service(nil), services...)
+	sortServices(copy3, "http")
+	if copy3[0].HTTPStatus != 404 || copy3[2].HTTPStatus != 0 {
+		t.Fatalf("http sort wrong: %+v", copy3)
+	}
+}
+
 func TestFilterServicesOnlyHTTP(t *testing.T) {
 	services := []radar.Service{
 		{Port: 8080, HTTPStatus: 200},
@@ -197,6 +222,32 @@ func TestValidateFlagCombination(t *testing.T) {
 	}
 }
 
+func TestParseSortMode(t *testing.T) {
+	tests := []struct {
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{in: "", want: "port"},
+		{in: "port", want: "port"},
+		{in: "process", want: "process"},
+		{in: "http", want: "http"},
+		{in: "nope", wantErr: true},
+	}
+	for _, tc := range tests {
+		got, err := parseSortMode(tc.in)
+		if tc.wantErr {
+			if err == nil {
+				t.Fatalf("expected error for %q", tc.in)
+			}
+			continue
+		}
+		if err != nil || got != tc.want {
+			t.Fatalf("parseSortMode(%q) = %q, %v; want %q", tc.in, got, err, tc.want)
+		}
+	}
+}
+
 func TestParseWatchDetectMode(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -247,6 +298,17 @@ func TestServiceKeyPortProcess(t *testing.T) {
 				t.Fatalf("serviceKey() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestCompactUnicodeSafe(t *testing.T) {
+	in := "服务-emoji-🚀-very-long"
+	got := compact(in, 10)
+	if !strings.HasSuffix(got, "…") {
+		t.Fatalf("expected ellipsis, got %q", got)
+	}
+	if !utf8.ValidString(got) {
+		t.Fatalf("invalid utf8 output: %q", got)
 	}
 }
 
@@ -302,7 +364,7 @@ func TestWatchLoopCancellation(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- watchLoop(ctx, 5, time.Second, false, false, false, nil, false, 42, "port", scan, nil, ticks, emit)
+		errCh <- watchLoop(ctx, 5, time.Second, false, false, false, nil, false, 42, "port", "port", scan, nil, ticks, emit)
 	}()
 
 	ticks <- time.Now()
@@ -348,7 +410,7 @@ func TestWatchLoopContinuesAfterTransientScanError(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- watchLoop(ctx, 5, time.Second, false, false, false, nil, false, 42, "port", scan, nil, ticks, emit)
+		errCh <- watchLoop(ctx, 5, time.Second, false, false, false, nil, false, 42, "port", "port", scan, nil, ticks, emit)
 	}()
 
 	ticks <- time.Now()
@@ -375,7 +437,7 @@ func TestWatchLoopStrictModePropagatesScanError(t *testing.T) {
 	scan := func(context.Context, time.Duration) ([]radar.Service, error) {
 		return nil, context.DeadlineExceeded
 	}
-	err := watchLoop(context.Background(), 5, time.Second, false, false, true, nil, false, 42, "port", scan, nil, make(chan time.Time), nil)
+	err := watchLoop(context.Background(), 5, time.Second, false, false, true, nil, false, 42, "port", "port", scan, nil, make(chan time.Time), nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -453,6 +515,54 @@ func TestLoadAliases(t *testing.T) {
 	}
 	if aliases[3000] != "frontend" || aliases[5432] != "postgres-db" {
 		t.Fatalf("unexpected aliases: %+v", aliases)
+	}
+}
+
+func TestMetricsAuthorized(t *testing.T) {
+	tests := []struct {
+		token string
+		auth  string
+		want  bool
+	}{
+		{token: "", auth: "", want: true},
+		{token: "abc", auth: "", want: false},
+		{token: "abc", auth: "Bearer abc", want: true},
+		{token: "abc", auth: "Bearer wrong", want: false},
+	}
+	for _, tc := range tests {
+		if got := metricsAuthorized(tc.token, tc.auth); got != tc.want {
+			t.Fatalf("metricsAuthorized(%q,%q)=%v want %v", tc.token, tc.auth, got, tc.want)
+		}
+	}
+}
+
+func TestBuildMetricsMuxEndpoints(t *testing.T) {
+	scan := func(context.Context, time.Duration) ([]radar.Service, error) {
+		return []radar.Service{{Port: 3000, Process: "web", HTTPStatus: 200}}, nil
+	}
+	mux := buildMetricsMux("/metrics", "token123", time.Second, nil, false, "port", nil, scan)
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("healthz code=%d want %d", w.Code, http.StatusUnauthorized)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req.Header.Set("Authorization", "Bearer token123")
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "ok") {
+		t.Fatalf("healthz success unexpected: code=%d body=%s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req.Header.Set("Authorization", "Bearer token123")
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "devport_radar_services_total") {
+		t.Fatalf("metrics unexpected: code=%d body=%s", w.Code, w.Body.String())
 	}
 }
 

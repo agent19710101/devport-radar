@@ -10,7 +10,7 @@ Modern local development stacks (apps, databases, queues, agent runtimes, browse
 
 ## Status
 
-- Current release: **v0.6.1**
+- Current release: **v0.7.0**
 - Platform: Linux (`ss`) + macOS fallback (`lsof`)
 - Maturity: early, actively iterating in small releases
 - Merge readiness requires CI matrix (`ubuntu-latest` + `macos-latest`, Go `1.24.x`/`1.25.x`) with `gofmt`, `go vet`, `go test`, and `go test -race` (latest Ubuntu Go lane)
@@ -32,7 +32,9 @@ Modern local development stacks (apps, databases, queues, agent runtimes, browse
 - Optional probe bypass via `--no-http-probe` for faster port/process inventory
 - Richer service fingerprints for common local runtimes (Ollama, Open WebUI, Qdrant, Redis, Postgres, MySQL, MongoDB, Grafana, Prometheus)
 - Optional service aliases via local file (`--aliases-file`)
-- Prometheus scrape endpoint mode (`--metrics-addr`, `--metrics-path`)
+- Prometheus scrape endpoint mode (`--metrics-addr`, `--metrics-path`) with optional auth token
+- Health endpoint in metrics mode (`/healthz`)
+- Sort controls for table/watch views (`--sort port|process|http`)
 
 ## Install
 
@@ -55,6 +57,10 @@ go build ./cmd/devport-radar
 ```bash
 # one-shot table output
 devport-radar
+
+# sort by process or HTTP status
+devport-radar --sort process
+devport-radar --sort http
 
 # output as json (single snapshot array)
 devport-radar --json
@@ -103,6 +109,10 @@ devport-radar --aliases-file ./aliases.txt
 # expose Prometheus metrics for scrape
 devport-radar --metrics-addr :9317 --aliases-file ./aliases.txt
 curl -s localhost:9317/metrics
+
+# secure metrics + health endpoints with bearer token
+devport-radar --metrics-addr :9317 --metrics-token secret123
+curl -H 'Authorization: Bearer secret123' -s localhost:9317/healthz
 ```
 
 ## Automation Contract (v0.x, stable unless noted)
@@ -149,6 +159,12 @@ Each line is a JSON object with:
 - `port` (default): identity is only the port; process restarts on same port are not emitted as changes.
 - `port-process`: identity is `port+pid` (fallback `port+process`), so process swaps on the same port are emitted.
 
+### `--sort`
+
+- `port` (default): ascending by port.
+- `process`: lexicographic process name, then port.
+- `http`: descending HTTP status, then port.
+
 ### `--watch-strict`
 
 - Default watch behavior is resilient: transient scan failures are emitted/logged and the next tick retries.
@@ -165,10 +181,12 @@ Each line is a JSON object with:
 - Format: one mapping per line, `<port>=<alias>` (comments allowed with `#`).
 - Aliases are applied to table output, JSON snapshots, watch events, and metrics labels.
 
-### `--metrics-addr` / `--metrics-path`
+### `--metrics-addr` / `--metrics-path` / `--metrics-token`
 
 - Starts an HTTP server that exposes Prometheus metrics (`text/plain; version=0.0.4`).
-- Endpoint performs a fresh scan on each scrape and emits:
+- Optional `--metrics-token` enforces `Authorization: Bearer <token>` on `/metrics` and `/healthz`.
+- `/healthz` returns lightweight service health for automation checks.
+- Metrics endpoint performs a fresh scan on each scrape and emits:
   - `devport_radar_services_total`
   - `devport_radar_service_up{port,process,fingerprint,alias}`
   - `devport_radar_service_http_status{...}` (only when probe succeeded)
@@ -214,13 +232,37 @@ Each line is a JSON object with:
 - `--only-http` cannot be combined with `--no-http-probe`
 - `--interval` must be greater than zero
 
+## Grafana + alert starter
+
+Minimal panel query:
+
+```promql
+devport_radar_service_up
+```
+
+Alert example (service disappeared):
+
+```yaml
+groups:
+  - name: devport-radar
+    rules:
+      - alert: DevportServiceDown
+        expr: devport_radar_service_up == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Service down on port {{ $labels.port }}"
+          description: "{{ $labels.process }} ({{ $labels.fingerprint }}) is not detected by devport-radar"
+```
+
 ## Roadmap
 
 - [x] Minimal TUI mode (`--watch --tui`)
 - [x] Project labels/aliases for stable service naming
 - [x] Prometheus exporter mode
 - [x] macOS fallback backend (`lsof`) when `ss` is unavailable
-- [ ] See scoped milestones in [RELEASE_PLAN.md](./RELEASE_PLAN.md)
+- [x] See scoped milestones in [RELEASE_PLAN.md](./RELEASE_PLAN.md)
 
 ## License
 

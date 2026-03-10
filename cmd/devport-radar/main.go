@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/agent19710101/devport-radar/pkg/radar"
+	"github.com/mattn/go-runewidth"
 )
 
 type watchEvent struct {
@@ -47,8 +48,10 @@ func main() {
 		onlyHTTP    = flag.Bool("only-http", false, "Show only services with successful HTTP probe response")
 		noHTTPProbe = flag.Bool("no-http-probe", false, "Disable HTTP probing for faster port/process-only scans")
 		tui         = flag.Bool("tui", false, "Render watch output as a minimal terminal dashboard")
+		sortMode    = flag.String("sort", "port", "Sort mode: port, process, http")
 		metricsAddr = flag.String("metrics-addr", "", "Serve Prometheus metrics at the given listen address (e.g. :9317)")
 		metricsPath = flag.String("metrics-path", "/metrics", "HTTP path for Prometheus metrics endpoint")
+		metricsToken = flag.String("metrics-token", "", "Optional bearer token required to read metrics/health endpoints")
 		aliasesFile = flag.String("aliases-file", "", "Optional port alias file (format: <port>=<alias>)")
 	)
 	flag.Parse()
@@ -67,6 +70,10 @@ func main() {
 	if err != nil {
 		exitf("invalid --watch-detect: %v", err)
 	}
+	sortBy, err := parseSortMode(*sortMode)
+	if err != nil {
+		exitf("invalid --sort: %v", err)
+	}
 	if err := validateFlagCombination(*watch, *jsonOut, *tui, *watchStrict, *watchDetect, *intervalS, *onlyHTTP, *noHTTPProbe); err != nil {
 		exitf("invalid flag combination: %v", err)
 	}
@@ -80,7 +87,7 @@ func main() {
 
 	ctx := context.Background()
 	if strings.TrimSpace(*metricsAddr) != "" {
-		if err := runMetricsServer(ctx, *metricsAddr, *metricsPath, probeTimeout, filter, *onlyHTTP, aliases); err != nil {
+		if err := runMetricsServer(ctx, *metricsAddr, *metricsPath, *metricsToken, probeTimeout, filter, *onlyHTTP, sortBy, aliases); err != nil {
 			exitf("metrics server failed: %v", err)
 		}
 		return
@@ -88,7 +95,7 @@ func main() {
 	if *watch {
 		watchCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		if err := watchLoop(watchCtx, *intervalS, probeTimeout, *jsonOut, *tui, *watchStrict, filter, *onlyHTTP, *titleWidth, detectMode, radar.Scan, aliases, nil, nil); err != nil {
+		if err := watchLoop(watchCtx, *intervalS, probeTimeout, *jsonOut, *tui, *watchStrict, filter, *onlyHTTP, *titleWidth, detectMode, sortBy, radar.Scan, aliases, nil, nil); err != nil {
 			exitf("watch failed: %v", err)
 		}
 		return
@@ -100,6 +107,7 @@ func main() {
 	}
 	services = filterServices(services, filter, *onlyHTTP)
 	services = applyAliases(services, aliases)
+	sortServices(services, sortBy)
 	printServices(services, *jsonOut, *titleWidth)
 }
 
@@ -126,6 +134,7 @@ func watchLoop(
 	onlyHTTP bool,
 	titleWidth int,
 	detectMode string,
+	sortMode string,
 	scan scanFn,
 	aliases map[int]string,
 	tick <-chan time.Time,
@@ -187,6 +196,7 @@ func watchLoop(
 		}
 		services = filterServices(services, filter, onlyHTTP)
 		services = applyAliases(services, aliases)
+		sortServices(services, sortMode)
 		current := serviceIndex(services, detectMode)
 		emit(prev, current, services)
 		prev = current
@@ -325,10 +335,21 @@ func renderDashboard(services []radar.Service, titleWidth int, now time.Time) st
 
 func compact(s string, max int) string {
 	s = strings.TrimSpace(s)
-	if len(s) <= max {
+	if max <= 1 {
+		return ""
+	}
+	if runewidth.StringWidth(s) <= max {
 		return s
 	}
-	return s[:max-1] + "…"
+	out := ""
+	for _, r := range s {
+		next := out + string(r)
+		if runewidth.StringWidth(next+"…") > max {
+			return out + "…"
+		}
+		out = next
+	}
+	return out
 }
 
 func intString(v int) string {
@@ -375,6 +396,39 @@ func parseWatchDetectMode(raw string) (string, error) {
 	default:
 		return "", fmt.Errorf("unsupported mode %q (use port or port-process)", raw)
 	}
+}
+
+func parseSortMode(raw string) (string, error) {
+	mode := strings.TrimSpace(strings.ToLower(raw))
+	switch mode {
+	case "", "port":
+		return "port", nil
+	case "process", "http":
+		return mode, nil
+	default:
+		return "", fmt.Errorf("unsupported mode %q (use port, process, or http)", raw)
+	}
+}
+
+func sortServices(services []radar.Service, mode string) {
+	sort.Slice(services, func(i, j int) bool {
+		a, b := services[i], services[j]
+		switch mode {
+		case "process":
+			ap, bp := strings.ToLower(a.Process), strings.ToLower(b.Process)
+			if ap == bp {
+				return a.Port < b.Port
+			}
+			return ap < bp
+		case "http":
+			if a.HTTPStatus == b.HTTPStatus {
+				return a.Port < b.Port
+			}
+			return a.HTTPStatus > b.HTTPStatus
+		default:
+			return a.Port < b.Port
+		}
+	})
 }
 
 func serviceIndex(services []radar.Service, detectMode string) map[string]radar.Service {
@@ -567,24 +621,47 @@ func applyAliases(services []radar.Service, aliases map[int]string) []radar.Serv
 	return out
 }
 
-func runMetricsServer(ctx context.Context, addr, path string, timeout time.Duration, filter map[int]struct{}, onlyHTTP bool, aliases map[int]string) error {
+func buildMetricsMux(path, token string, timeout time.Duration, filter map[int]struct{}, onlyHTTP bool, sortMode string, aliases map[int]string, scan scanFn) *http.ServeMux {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		path = "/metrics"
 	}
+	if scan == nil {
+		scan = radar.Scan
+	}
 	mux := http.NewServeMux()
+	authorized := func(r *http.Request) bool {
+		return metricsAuthorized(token, r.Header.Get("Authorization"))
+	}
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		if !authorized(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("{\"ok\":true}"))
+	})
 	mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
-		services, err := radar.Scan(r.Context(), timeout)
+		if !authorized(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		services, err := scan(r.Context(), timeout)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("scan failed: %v", err), http.StatusServiceUnavailable)
 			return
 		}
 		services = filterServices(services, filter, onlyHTTP)
 		services = applyAliases(services, aliases)
+		sortServices(services, sortMode)
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 		_, _ = w.Write([]byte(renderPrometheusMetrics(services)))
 	})
+	return mux
+}
 
+func runMetricsServer(ctx context.Context, addr, path, token string, timeout time.Duration, filter map[int]struct{}, onlyHTTP bool, sortMode string, aliases map[int]string) error {
+	mux := buildMetricsMux(path, token, timeout, filter, onlyHTTP, sortMode, aliases, radar.Scan)
 	srv := &http.Server{Addr: addr, Handler: mux}
 	go func() {
 		<-ctx.Done()
@@ -618,6 +695,14 @@ func renderPrometheusMetrics(services []radar.Service) string {
 		}
 	}
 	return b.String()
+}
+
+func metricsAuthorized(token, authHeader string) bool {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return true
+	}
+	return strings.TrimSpace(authHeader) == "Bearer "+token
 }
 
 func esc(s string) string {

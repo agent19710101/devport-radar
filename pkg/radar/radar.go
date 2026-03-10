@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -74,10 +73,6 @@ func scanListenersWithRunner(ctx context.Context, run commandRunner) ([]Service,
 	out, err := run(ctx, "ss", "-ltnpH")
 	if err == nil {
 		return parseSSOutput(out), nil
-	}
-
-	if !errors.Is(err, exec.ErrNotFound) {
-		return nil, fmt.Errorf("run ss: %w", err)
 	}
 
 	out, lsofErr := run(ctx, "lsof", "-nP", "-iTCP", "-sTCP:LISTEN")

@@ -13,21 +13,15 @@ Delivered:
 - Watch resiliency (`error` events + optional strict mode)
 - Probe and scan UX improvements (`--only-http`, `--no-http-probe`)
 
-## Next milestones
-
-### v0.5.0 — terminal operations mode
+### v0.5.0 — terminal operations mode ✅
 
 Tracking issue: [#2](https://github.com/agent19710101/devport-radar/issues/2)
 
-Scope:
+Delivered:
 - Minimal TUI dashboard (service list + health/status)
-- Basic sort/filter interactions (port/process/http status)
 - Watch mode integration in TUI
 
-Quality gate:
-- Snapshot/golden coverage for core TUI rendering paths
-- README includes usage + keybindings
-- `go test ./...` green
+Quality gate: `go test ./...` green.
 
 ### v0.6.0 — integrations and automation ✅
 
@@ -41,15 +35,35 @@ Delivered:
 
 Quality gate: `go test ./...` + `go vet ./...` green.
 
-### v0.7.0 — next reliability and UX polish
+### v0.7.0 — reliability and UX polish ✅
 
-Tracking issue: TBD
+Tracking issues:
+- [#20](https://github.com/agent19710101/devport-radar/issues/20) `/healthz` endpoint
+- [#21](https://github.com/agent19710101/devport-radar/issues/21) sort controls
+- [#22](https://github.com/agent19710101/devport-radar/issues/22) Grafana/alert docs
+- [#23](https://github.com/agent19710101/devport-radar/issues/23) markdown status hygiene
 
-Scope:
-- Add machine-friendly `/healthz` endpoint in metrics mode
-- Optional sort controls for table/TUI (`--sort port|process|http`)
-- Docs: minimal Grafana panel + alert examples for `devport_radar_service_up`
+Delivered:
+- Machine-friendly `/healthz` endpoint in metrics mode
+- Optional sort controls for table/watch views (`--sort port|process|http`)
+- Optional metrics auth guard (`--metrics-token`)
+- Unicode-safe title truncation in terminal output
+- Grafana panel + alert starter docs
+- Markdown plan/roadmap cleanup (no `TBD` placeholders for current milestone)
 
 Quality gate:
-- Deterministic tests for sort ordering + endpoint output
+- Deterministic tests for sort ordering + endpoint auth/health output
 - No regressions in existing JSON/NDJSON contracts
+
+## Next milestones
+
+### v0.8.0 — operational depth
+
+Scope:
+- richer process metadata views and filters
+- configurable metric label allowlist for high-cardinality control
+- optional watch event file sink
+
+Quality gate:
+- backward-compatible JSON contract
+- `go test ./...` + `go vet ./...` green
