@@ -10,7 +10,7 @@ Modern local development stacks (apps, databases, queues, agent runtimes, browse
 
 ## Status
 
-- Current release: **v0.4.0**
+- Current release: **v0.4.1**
 - Platform: Linux (`ss` backend)
 - Maturity: early, actively iterating in small releases
 - Merge readiness requires CI (`gofmt`, `go vet`, `go test`) on push/PR
@@ -27,6 +27,7 @@ Modern local development stacks (apps, databases, queues, agent runtimes, browse
 - Configurable watch change detection (`--watch-detect port|port-process`)
 - Structured watch JSON mode (`--watch --json`) emitting NDJSON `appeared`/`disappeared`/`snapshot` events
 - Focus scans via `--ports` list/range filter
+- Limit output to responsive HTTP services via `--only-http`
 
 ## Install
 
@@ -68,6 +69,9 @@ devport-radar --ports 8000-8100
 # tighten probe timeout
 devport-radar --timeout 600ms
 
+# show only endpoints with HTTP responses
+devport-radar --only-http
+
 # live mode every 3 seconds
 devport-radar --watch --interval 3
 
@@ -89,13 +93,15 @@ devport-radar --title-width 24
 ```json
 [
   {
-    "Port": 8080,
-    "Process": "my-app",
-    "PID": 12345,
-    "HTTPStatus": 200,
-    "Server": "Caddy",
-    "Title": "Dashboard",
-    "Fingerprint": "http-service"
+    "port": 8080,
+    "protocol": "tcp",
+    "process": "my-app",
+    "pid": 12345,
+    "http_status": 200,
+    "server": "Caddy",
+    "title": "Dashboard",
+    "fingerprint": "http-service",
+    "scanned_at": "2026-03-10T06:30:00Z"
   }
 ]
 ```

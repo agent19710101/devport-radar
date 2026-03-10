@@ -39,6 +39,7 @@ func main() {
 		watchDetect = flag.String("watch-detect", "port", "Change detection mode: port or port-process")
 		ports       = flag.String("ports", "", "Optional port filter list/ranges (e.g. 3000,5432,8000-8010)")
 		titleWidth  = flag.Int("title-width", 42, "Max title width for table output")
+		onlyHTTP    = flag.Bool("only-http", false, "Show only services with successful HTTP probe response")
 	)
 	flag.Parse()
 
@@ -56,7 +57,7 @@ func main() {
 	if *watch {
 		watchCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		if err := watchLoop(watchCtx, *intervalS, *timeout, *jsonOut, filter, *titleWidth, detectMode, radar.Scan, nil, nil); err != nil {
+		if err := watchLoop(watchCtx, *intervalS, *timeout, *jsonOut, filter, *onlyHTTP, *titleWidth, detectMode, radar.Scan, nil, nil); err != nil {
 			exitf("watch failed: %v", err)
 		}
 		return
@@ -66,7 +67,7 @@ func main() {
 	if err != nil {
 		exitf("scan failed: %v", err)
 	}
-	services = filterServices(services, filter)
+	services = filterServices(services, filter, *onlyHTTP)
 	printServices(services, *jsonOut, *titleWidth)
 }
 
@@ -88,6 +89,7 @@ func watchLoop(
 	timeout time.Duration,
 	jsonOut bool,
 	filter map[int]struct{},
+	onlyHTTP bool,
 	titleWidth int,
 	detectMode string,
 	scan scanFn,
@@ -133,7 +135,7 @@ func watchLoop(
 		if err != nil {
 			return fmt.Errorf("scan failed: %w", err)
 		}
-		services = filterServices(services, filter)
+		services = filterServices(services, filter, onlyHTTP)
 		current := serviceIndex(services, detectMode)
 		emit(prev, current, services)
 		prev = current
@@ -349,15 +351,21 @@ func parseValidPort(raw string) (int, error) {
 	return p, nil
 }
 
-func filterServices(services []radar.Service, filter map[int]struct{}) []radar.Service {
-	if len(filter) == 0 {
+func filterServices(services []radar.Service, filter map[int]struct{}, onlyHTTP bool) []radar.Service {
+	if len(filter) == 0 && !onlyHTTP {
 		return services
 	}
 	out := make([]radar.Service, 0, len(services))
 	for _, s := range services {
-		if _, ok := filter[s.Port]; ok {
-			out = append(out, s)
+		if len(filter) > 0 {
+			if _, ok := filter[s.Port]; !ok {
+				continue
+			}
 		}
+		if onlyHTTP && s.HTTPStatus <= 0 {
+			continue
+		}
+		out = append(out, s)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Port < out[j].Port })
 	return out

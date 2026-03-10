@@ -50,11 +50,26 @@ func TestFilterServices(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parsePortFilter error: %v", err)
 	}
-	got := filterServices(services, filter)
+	got := filterServices(services, filter, false)
 	if len(got) != 2 {
 		t.Fatalf("len(filterServices()) = %d, want 2", len(got))
 	}
 	if got[0].Port != 3000 || got[1].Port != 5432 {
+		t.Fatalf("unexpected order/ports: %+v", got)
+	}
+}
+
+func TestFilterServicesOnlyHTTP(t *testing.T) {
+	services := []radar.Service{
+		{Port: 8080, HTTPStatus: 200},
+		{Port: 3000},
+		{Port: 5432, HTTPStatus: 404},
+	}
+	got := filterServices(services, nil, true)
+	if len(got) != 2 {
+		t.Fatalf("len(filterServices()) = %d, want 2", len(got))
+	}
+	if got[0].Port != 5432 || got[1].Port != 8080 {
 		t.Fatalf("unexpected order/ports: %+v", got)
 	}
 }
@@ -177,7 +192,7 @@ func TestWatchLoopCancellation(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- watchLoop(ctx, 5, time.Second, false, nil, 42, "port", scan, ticks, emit)
+		errCh <- watchLoop(ctx, 5, time.Second, false, nil, false, 42, "port", scan, ticks, emit)
 	}()
 
 	ticks <- time.Now()
@@ -203,7 +218,7 @@ func TestWatchLoopPropagatesScanError(t *testing.T) {
 	scan := func(context.Context, time.Duration) ([]radar.Service, error) {
 		return nil, context.DeadlineExceeded
 	}
-	err := watchLoop(context.Background(), 5, time.Second, false, nil, 42, "port", scan, make(chan time.Time), nil)
+	err := watchLoop(context.Background(), 5, time.Second, false, nil, false, 42, "port", scan, make(chan time.Time), nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
