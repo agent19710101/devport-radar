@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -29,27 +30,18 @@ type Service struct {
 }
 
 var procPattern = regexp.MustCompile(`\("([^\"]+)",pid=(\d+)`)
+var lsofListenPattern = regexp.MustCompile(`^(\S+)\s+(\d+)\s+.*\sTCP\s+(\S+)\s+\(LISTEN\)$`)
 var titlePattern = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
 
 func Scan(ctx context.Context, timeout time.Duration) ([]Service, error) {
-	cmd := exec.CommandContext(ctx, "ss", "-ltnpH")
-	out, err := cmd.Output()
+	listeners, err := scanListeners(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("run ss: %w", err)
+		return nil, err
 	}
 
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	uniq := map[string]Service{}
 	now := time.Now()
-
-	for _, line := range lines {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		svc, ok := parseSSLine(line)
-		if !ok {
-			continue
-		}
+	for _, svc := range listeners {
 		svc.ScannedAt = now
 		probeHTTP(ctx, &svc, timeout)
 		key := fmt.Sprintf("%d:%d", svc.Port, svc.PID)
@@ -65,6 +57,55 @@ func Scan(ctx context.Context, timeout time.Duration) ([]Service, error) {
 	}
 	sort.Slice(services, func(i, j int) bool { return services[i].Port < services[j].Port })
 	return services, nil
+}
+
+func scanListeners(ctx context.Context) ([]Service, error) {
+	out, err := exec.CommandContext(ctx, "ss", "-ltnpH").Output()
+	if err == nil {
+		return parseSSOutput(out), nil
+	}
+
+	if !errors.Is(err, exec.ErrNotFound) {
+		return nil, fmt.Errorf("run ss: %w", err)
+	}
+
+	out, lsofErr := exec.CommandContext(ctx, "lsof", "-nP", "-iTCP", "-sTCP:LISTEN").Output()
+	if lsofErr != nil {
+		return nil, fmt.Errorf("run ss: %w; run lsof fallback: %v", err, lsofErr)
+	}
+	return parseLsofOutput(out), nil
+}
+
+func parseSSOutput(out []byte) []Service {
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	services := make([]Service, 0, len(lines))
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		svc, ok := parseSSLine(line)
+		if !ok {
+			continue
+		}
+		services = append(services, svc)
+	}
+	return services
+}
+
+func parseLsofOutput(out []byte) []Service {
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	services := make([]Service, 0, len(lines))
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "COMMAND ") {
+			continue
+		}
+		svc, ok := parseLsofLine(line)
+		if !ok {
+			continue
+		}
+		services = append(services, svc)
+	}
+	return services
 }
 
 func parseSSLine(line string) (Service, bool) {
@@ -86,6 +127,26 @@ func parseSSLine(line string) (Service, bool) {
 		svc.PID = pid
 	}
 	return svc, true
+}
+
+func parseLsofLine(line string) (Service, bool) {
+	m := lsofListenPattern.FindStringSubmatch(strings.TrimSpace(line))
+	if len(m) != 4 {
+		return Service{}, false
+	}
+	pid, _ := strconv.Atoi(m[2])
+	local := m[3]
+	port := parsePort(local)
+	if port == 0 {
+		return Service{}, false
+	}
+	return Service{
+		Port:     port,
+		Protocol: "tcp",
+		Process:  m[1],
+		PID:      pid,
+		Bind:     local,
+	}, true
 }
 
 func parsePort(local string) int {

@@ -10,14 +10,14 @@ Modern local development stacks (apps, databases, queues, agent runtimes, browse
 
 ## Status
 
-- Current release: **v0.4.6**
-- Platform: Linux (`ss` backend)
+- Current release: **v0.4.7**
+- Platform: Linux (`ss`) + macOS fallback (`lsof`)
 - Maturity: early, actively iterating in small releases
 - Merge readiness requires CI matrix (`go1.24.x`, `go1.25.x`) with `gofmt`, `go vet`, `go test`, and `go test -race` (latest Go)
 
 ## Features
 
-- Scan local listening TCP sockets via `ss -ltnpH`
+- Scan local listening TCP sockets via `ss -ltnpH` with automatic `lsof` fallback when `ss` is unavailable
 - Dedupe duplicate listeners (e.g., IPv4/IPv6 overlap)
 - Resolve process name + PID when available
 - Probe multiple local targets per port (bind host + loopbacks) with configurable timeout
@@ -148,7 +148,8 @@ Each line is a JSON object with:
 
 ### `scan failed` or empty output
 
-- Ensure `ss` is available and working: `ss -ltnpH`
+- Preferred backend uses `ss`: verify with `ss -ltnpH`
+- On hosts without `ss` (e.g. macOS), `devport-radar` falls back to `lsof -nP -iTCP -sTCP:LISTEN`
 - Run with sufficient privileges if process/PID fields are empty (some distros restrict process metadata)
 - If you only need listener inventory, bypass probes: `devport-radar --no-http-probe`
 
@@ -168,7 +169,7 @@ Each line is a JSON object with:
 - [ ] TUI mode with grouped projects and health badges
 - [ ] Project labels/aliases for stable service naming
 - [ ] Prometheus exporter mode
-- [ ] macOS fallback backend (`lsof`) when `ss` is unavailable
+- [x] macOS fallback backend (`lsof`) when `ss` is unavailable
 - [ ] See scoped milestones in [RELEASE_PLAN.md](./RELEASE_PLAN.md)
 
 ## License

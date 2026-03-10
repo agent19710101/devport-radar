@@ -33,6 +33,30 @@ func TestParseSSLine(t *testing.T) {
 	}
 }
 
+func TestParseLsofLine(t *testing.T) {
+	line := "node 12345 user 22u IPv4 0x1234 0t0 TCP 127.0.0.1:3000 (LISTEN)"
+	svc, ok := parseLsofLine(line)
+	if !ok {
+		t.Fatalf("parseLsofLine should parse valid input")
+	}
+	if svc.Port != 3000 || svc.PID != 12345 || svc.Process != "node" {
+		t.Fatalf("unexpected service: %+v", svc)
+	}
+}
+
+func TestParseLsofOutputSkipsHeaderAndInvalidLines(t *testing.T) {
+	out := []byte("COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\n" +
+		"node 12345 user 22u IPv4 0x1234 0t0 TCP 127.0.0.1:3000 (LISTEN)\n" +
+		"bad-line\n")
+	services := parseLsofOutput(out)
+	if len(services) != 1 {
+		t.Fatalf("parseLsofOutput parsed %d services, want 1", len(services))
+	}
+	if services[0].Port != 3000 {
+		t.Fatalf("first service port = %d, want 3000", services[0].Port)
+	}
+}
+
 func TestInferFingerprint(t *testing.T) {
 	tests := []struct {
 		name string

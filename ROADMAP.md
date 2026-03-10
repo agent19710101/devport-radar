@@ -10,5 +10,5 @@
 ## Mid term
 
 - [ ] TUI dashboard (grouped services + health)
-- [ ] macOS backend fallback (`lsof`)
+- [x] macOS backend fallback (`lsof`)
 - [ ] Prometheus exporter endpoint
