@@ -56,13 +56,13 @@ func TestFilterServices(t *testing.T) {
 }
 
 func TestBuildDeltaEvents(t *testing.T) {
-	prev := map[int]radar.Service{
-		3000: {Port: 3000, Process: "node"},
-		5432: {Port: 5432, Process: "postgres"},
+	prev := map[string]radar.Service{
+		"3000": {Port: 3000, Process: "node"},
+		"5432": {Port: 5432, Process: "postgres"},
 	}
-	current := map[int]radar.Service{
-		3000: {Port: 3000, Process: "node"},
-		8080: {Port: 8080, Process: "go-app"},
+	current := map[string]radar.Service{
+		"3000": {Port: 3000, Process: "node"},
+		"8080": {Port: 8080, Process: "go-app"},
 	}
 
 	events := buildDeltaEvents(prev, current)
@@ -77,5 +77,58 @@ func TestBuildDeltaEvents(t *testing.T) {
 	}
 	if events[0].Service == nil || events[0].Service.Process != "go-app" {
 		t.Fatalf("appeared service mismatch: %+v", events[0].Service)
+	}
+}
+
+func TestParseWatchDetectMode(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		want    string
+		wantErr bool
+	}{
+		{name: "default", raw: "", want: "port"},
+		{name: "port", raw: "port", want: "port"},
+		{name: "port process", raw: "port-process", want: "port-process"},
+		{name: "invalid", raw: "pid", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseWatchDetectMode(tc.raw)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseWatchDetectMode() error = %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("parseWatchDetectMode() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestServiceKeyPortProcess(t *testing.T) {
+	tests := []struct {
+		name string
+		svc  radar.Service
+		want string
+	}{
+		{name: "prefer pid", svc: radar.Service{Port: 8080, PID: 123, Process: "node"}, want: "8080/123"},
+		{name: "fallback process", svc: radar.Service{Port: 8080, Process: "node"}, want: "8080/node"},
+		{name: "fallback port", svc: radar.Service{Port: 8080}, want: "8080"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := serviceKey(tc.svc, "port-process")
+			if got != tc.want {
+				t.Fatalf("serviceKey() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

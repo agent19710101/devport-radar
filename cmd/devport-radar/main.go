@@ -28,10 +28,11 @@ func main() {
 	var (
 		jsonOut    = flag.Bool("json", false, "Print JSON output")
 		timeout    = flag.Duration("timeout", 900*time.Millisecond, "HTTP probe timeout")
-		watch      = flag.Bool("watch", false, "Refresh continuously and show service deltas")
-		intervalS  = flag.Int("interval", 5, "Watch refresh interval in seconds")
-		ports      = flag.String("ports", "", "Optional port filter list/ranges (e.g. 3000,5432,8000-8010)")
-		titleWidth = flag.Int("title-width", 42, "Max title width for table output")
+		watch       = flag.Bool("watch", false, "Refresh continuously and show service deltas")
+		intervalS   = flag.Int("interval", 5, "Watch refresh interval in seconds")
+		watchDetect = flag.String("watch-detect", "port", "Change detection mode: port or port-process")
+		ports       = flag.String("ports", "", "Optional port filter list/ranges (e.g. 3000,5432,8000-8010)")
+		titleWidth  = flag.Int("title-width", 42, "Max title width for table output")
 	)
 	flag.Parse()
 
@@ -40,8 +41,13 @@ func main() {
 		exitf("invalid --ports filter: %v", err)
 	}
 
+	detectMode, err := parseWatchDetectMode(*watchDetect)
+	if err != nil {
+		exitf("invalid --watch-detect: %v", err)
+	}
+
 	if *watch {
-		watchLoop(*intervalS, *timeout, *jsonOut, filter, *titleWidth)
+		watchLoop(*intervalS, *timeout, *jsonOut, filter, *titleWidth, detectMode)
 		return
 	}
 
@@ -65,21 +71,18 @@ func printServices(services []radar.Service, jsonOut bool, titleWidth int) {
 	printTable(services, titleWidth)
 }
 
-func watchLoop(intervalS int, timeout time.Duration, jsonOut bool, filter map[int]struct{}, titleWidth int) {
+func watchLoop(intervalS int, timeout time.Duration, jsonOut bool, filter map[int]struct{}, titleWidth int, detectMode string) {
 	if intervalS <= 0 {
 		intervalS = 5
 	}
-	var prev map[int]radar.Service
+	var prev map[string]radar.Service
 	for {
 		services, err := radar.Scan(context.Background(), timeout)
 		if err != nil {
 			exitf("scan failed: %v", err)
 		}
 		services = filterServices(services, filter)
-		current := map[int]radar.Service{}
-		for _, s := range services {
-			current[s.Port] = s
-		}
+		current := serviceIndex(services, detectMode)
 
 		if jsonOut {
 			if prev != nil {
@@ -98,7 +101,7 @@ func watchLoop(intervalS int, timeout time.Duration, jsonOut bool, filter map[in
 	}
 }
 
-func printDelta(prev, current map[int]radar.Service) {
+func printDelta(prev, current map[string]radar.Service) {
 	for _, ev := range buildDeltaEvents(prev, current) {
 		if ev.Type == "appeared" {
 			fmt.Printf("+ port %d appeared\n", ev.Port)
@@ -108,7 +111,7 @@ func printDelta(prev, current map[int]radar.Service) {
 	}
 }
 
-func printDeltaJSON(prev, current map[int]radar.Service) {
+func printDeltaJSON(prev, current map[string]radar.Service) {
 	events := buildDeltaEvents(prev, current)
 	for _, ev := range events {
 		printJSON(ev)
@@ -126,22 +129,25 @@ func printJSON(v any) {
 	}
 }
 
-func buildDeltaEvents(prev, current map[int]radar.Service) []watchEvent {
+func buildDeltaEvents(prev, current map[string]radar.Service) []watchEvent {
 	events := make([]watchEvent, 0)
-	for p, s := range current {
-		if _, ok := prev[p]; !ok {
+	for k, s := range current {
+		if _, ok := prev[k]; !ok {
 			svc := s
-			events = append(events, watchEvent{Type: "appeared", Port: p, Service: &svc, Timestamp: time.Now()})
+			events = append(events, watchEvent{Type: "appeared", Port: s.Port, Service: &svc, Timestamp: time.Now()})
 		}
 	}
-	for p, s := range prev {
-		if _, ok := current[p]; !ok {
+	for k, s := range prev {
+		if _, ok := current[k]; !ok {
 			svc := s
-			events = append(events, watchEvent{Type: "disappeared", Port: p, Service: &svc, Timestamp: time.Now()})
+			events = append(events, watchEvent{Type: "disappeared", Port: s.Port, Service: &svc, Timestamp: time.Now()})
 		}
 	}
 	sort.Slice(events, func(i, j int) bool {
 		if events[i].Type == events[j].Type {
+			if events[i].Port == events[j].Port {
+				return events[i].Service.PID < events[j].Service.PID
+			}
 			return events[i].Port < events[j].Port
 		}
 		return events[i].Type < events[j].Type
@@ -196,6 +202,38 @@ func compact(s string, max int) string {
 
 func intString(v int) string {
 	return fmt.Sprintf("%d", v)
+}
+
+func parseWatchDetectMode(raw string) (string, error) {
+	mode := strings.TrimSpace(strings.ToLower(raw))
+	switch mode {
+	case "", "port":
+		return "port", nil
+	case "port-process":
+		return mode, nil
+	default:
+		return "", fmt.Errorf("unsupported mode %q (use port or port-process)", raw)
+	}
+}
+
+func serviceIndex(services []radar.Service, detectMode string) map[string]radar.Service {
+	idx := make(map[string]radar.Service, len(services))
+	for _, s := range services {
+		idx[serviceKey(s, detectMode)] = s
+	}
+	return idx
+}
+
+func serviceKey(s radar.Service, detectMode string) string {
+	if detectMode == "port-process" {
+		if s.PID > 0 {
+			return fmt.Sprintf("%d/%d", s.Port, s.PID)
+		}
+		if s.Process != "" {
+			return fmt.Sprintf("%d/%s", s.Port, s.Process)
+		}
+	}
+	return intString(s.Port)
 }
 
 func parsePortFilter(raw string) (map[int]struct{}, error) {
