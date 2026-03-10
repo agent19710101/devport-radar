@@ -11,8 +11,8 @@
 
 - [x] TUI dashboard mode (`--watch --tui`)
 - [x] macOS backend fallback (`lsof`)
-- [ ] Prometheus exporter endpoint
-- [ ] Service labels/aliases from local config
+- [x] Prometheus exporter endpoint
+- [x] Service labels/aliases from local config
 
 ## Later
 

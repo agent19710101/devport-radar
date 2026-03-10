@@ -1,4 +1,4 @@
-PORT  PROCESS   PID   HTTP  FINGERPRINT  TITLE
-3000  node      9123  200   vite         Frontend Dashboard
-5432  postgres  1102  -     postgresql   -
-8080  -         -     404   -            A very long service…
+PORT  ALIAS  PROCESS   PID   HTTP  FINGERPRINT  TITLE
+3000  -      node      9123  200   vite         Frontend Dashboard
+5432  -      postgres  1102  -     postgresql   -
+8080  -      -         -     404   -            A very long service…

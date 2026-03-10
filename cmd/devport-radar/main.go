@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"sort"
@@ -45,6 +47,9 @@ func main() {
 		onlyHTTP    = flag.Bool("only-http", false, "Show only services with successful HTTP probe response")
 		noHTTPProbe = flag.Bool("no-http-probe", false, "Disable HTTP probing for faster port/process-only scans")
 		tui         = flag.Bool("tui", false, "Render watch output as a minimal terminal dashboard")
+		metricsAddr = flag.String("metrics-addr", "", "Serve Prometheus metrics at the given listen address (e.g. :9317)")
+		metricsPath = flag.String("metrics-path", "/metrics", "HTTP path for Prometheus metrics endpoint")
+		aliasesFile = flag.String("aliases-file", "", "Optional port alias file (format: <port>=<alias>)")
 	)
 	flag.Parse()
 
@@ -66,13 +71,24 @@ func main() {
 		exitf("invalid flag combination: %v", err)
 	}
 
+	aliases, err := loadAliases(*aliasesFile)
+	if err != nil {
+		exitf("load aliases: %v", err)
+	}
+
 	probeTimeout := resolveProbeTimeout(*timeout, *noHTTPProbe)
 
 	ctx := context.Background()
+	if strings.TrimSpace(*metricsAddr) != "" {
+		if err := runMetricsServer(ctx, *metricsAddr, *metricsPath, probeTimeout, filter, *onlyHTTP, aliases); err != nil {
+			exitf("metrics server failed: %v", err)
+		}
+		return
+	}
 	if *watch {
 		watchCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		if err := watchLoop(watchCtx, *intervalS, probeTimeout, *jsonOut, *tui, *watchStrict, filter, *onlyHTTP, *titleWidth, detectMode, radar.Scan, nil, nil); err != nil {
+		if err := watchLoop(watchCtx, *intervalS, probeTimeout, *jsonOut, *tui, *watchStrict, filter, *onlyHTTP, *titleWidth, detectMode, radar.Scan, aliases, nil, nil); err != nil {
 			exitf("watch failed: %v", err)
 		}
 		return
@@ -83,6 +99,7 @@ func main() {
 		exitf("scan failed: %v", err)
 	}
 	services = filterServices(services, filter, *onlyHTTP)
+	services = applyAliases(services, aliases)
 	printServices(services, *jsonOut, *titleWidth)
 }
 
@@ -110,6 +127,7 @@ func watchLoop(
 	titleWidth int,
 	detectMode string,
 	scan scanFn,
+	aliases map[int]string,
 	tick <-chan time.Time,
 	emit emitFn,
 ) error {
@@ -168,6 +186,7 @@ func watchLoop(
 			return nil
 		}
 		services = filterServices(services, filter, onlyHTTP)
+		services = applyAliases(services, aliases)
 		current := serviceIndex(services, detectMode)
 		emit(prev, current, services)
 		prev = current
@@ -262,7 +281,7 @@ func renderTable(services []radar.Service, titleWidth int) string {
 
 	var b bytes.Buffer
 	tw := tabwriter.NewWriter(&b, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(tw, "PORT\tPROCESS\tPID\tHTTP\tFINGERPRINT\tTITLE")
+	fmt.Fprintln(tw, "PORT\tALIAS\tPROCESS\tPID\tHTTP\tFINGERPRINT\tTITLE")
 	for _, s := range services {
 		httpStatus := "-"
 		if s.HTTPStatus > 0 {
@@ -271,6 +290,10 @@ func renderTable(services []radar.Service, titleWidth int) string {
 		title := compact(s.Title, titleWidth)
 		if title == "" {
 			title = "-"
+		}
+		alias := strings.TrimSpace(s.Alias)
+		if alias == "" {
+			alias = "-"
 		}
 		proc := s.Process
 		if proc == "" {
@@ -284,7 +307,7 @@ func renderTable(services []radar.Service, titleWidth int) string {
 		if fp == "" || fp == "unknown" {
 			fp = "-"
 		}
-		fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\n", s.Port, proc, pid, httpStatus, fp, title)
+		fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\t%s\n", s.Port, alias, proc, pid, httpStatus, fp, title)
 	}
 	_ = tw.Flush()
 	return b.String()
@@ -488,6 +511,117 @@ func filterServices(services []radar.Service, filter map[int]struct{}, onlyHTTP 
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Port < out[j].Port })
 	return out
+}
+
+func loadAliases(path string) (map[int]string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	aliases := map[int]string{}
+	scanner := bufio.NewScanner(f)
+	lineNo := 0
+	for scanner.Scan() {
+		lineNo++
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("line %d: expected <port>=<alias>", lineNo)
+		}
+		p, err := parseValidPort(parts[0])
+		if err != nil {
+			return nil, fmt.Errorf("line %d: %w", lineNo, err)
+		}
+		alias := strings.TrimSpace(parts[1])
+		if alias == "" {
+			return nil, fmt.Errorf("line %d: alias cannot be empty", lineNo)
+		}
+		aliases[p] = alias
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return aliases, nil
+}
+
+func applyAliases(services []radar.Service, aliases map[int]string) []radar.Service {
+	if len(aliases) == 0 {
+		return services
+	}
+	out := make([]radar.Service, 0, len(services))
+	for _, s := range services {
+		if alias, ok := aliases[s.Port]; ok {
+			s.Alias = alias
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+func runMetricsServer(ctx context.Context, addr, path string, timeout time.Duration, filter map[int]struct{}, onlyHTTP bool, aliases map[int]string) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		path = "/metrics"
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+		services, err := radar.Scan(r.Context(), timeout)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("scan failed: %v", err), http.StatusServiceUnavailable)
+			return
+		}
+		services = filterServices(services, filter, onlyHTTP)
+		services = applyAliases(services, aliases)
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		_, _ = w.Write([]byte(renderPrometheusMetrics(services)))
+	})
+
+	srv := &http.Server{Addr: addr, Handler: mux}
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	}()
+
+	fmt.Fprintf(os.Stderr, "serving metrics on http://%s%s\n", addr, path)
+	err := srv.ListenAndServe()
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
+}
+
+func renderPrometheusMetrics(services []radar.Service) string {
+	var b strings.Builder
+	b.WriteString("# HELP devport_radar_services_total Number of detected services.\n")
+	b.WriteString("# TYPE devport_radar_services_total gauge\n")
+	b.WriteString(fmt.Sprintf("devport_radar_services_total %d\n", len(services)))
+	b.WriteString("# HELP devport_radar_service_up Service detection marker (always 1 when present).\n")
+	b.WriteString("# TYPE devport_radar_service_up gauge\n")
+	for _, s := range services {
+		labels := fmt.Sprintf("port=\"%d\",process=\"%s\",fingerprint=\"%s\",alias=\"%s\"", s.Port, esc(s.Process), esc(s.Fingerprint), esc(s.Alias))
+		b.WriteString(fmt.Sprintf("devport_radar_service_up{%s} 1\n", labels))
+		if s.HTTPStatus > 0 {
+			b.WriteString(fmt.Sprintf("devport_radar_service_http_status{%s} %d\n", labels, s.HTTPStatus))
+		}
+	}
+	return b.String()
+}
+
+func esc(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "\"", "\\\"")
+	return s
 }
 
 func exitf(format string, args ...any) {

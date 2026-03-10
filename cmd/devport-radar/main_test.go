@@ -302,7 +302,7 @@ func TestWatchLoopCancellation(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- watchLoop(ctx, 5, time.Second, false, false, false, nil, false, 42, "port", scan, ticks, emit)
+		errCh <- watchLoop(ctx, 5, time.Second, false, false, false, nil, false, 42, "port", scan, nil, ticks, emit)
 	}()
 
 	ticks <- time.Now()
@@ -348,7 +348,7 @@ func TestWatchLoopContinuesAfterTransientScanError(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- watchLoop(ctx, 5, time.Second, false, false, false, nil, false, 42, "port", scan, ticks, emit)
+		errCh <- watchLoop(ctx, 5, time.Second, false, false, false, nil, false, 42, "port", scan, nil, ticks, emit)
 	}()
 
 	ticks <- time.Now()
@@ -375,7 +375,7 @@ func TestWatchLoopStrictModePropagatesScanError(t *testing.T) {
 	scan := func(context.Context, time.Duration) ([]radar.Service, error) {
 		return nil, context.DeadlineExceeded
 	}
-	err := watchLoop(context.Background(), 5, time.Second, false, false, true, nil, false, 42, "port", scan, make(chan time.Time), nil)
+	err := watchLoop(context.Background(), 5, time.Second, false, false, true, nil, false, 42, "port", scan, nil, make(chan time.Time), nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -426,6 +426,41 @@ func TestWatchNDJSONContractGolden(t *testing.T) {
 		}
 		if _, ok := obj["timestamp"]; !ok {
 			t.Fatalf("event missing timestamp: %q", line)
+		}
+	}
+}
+
+func TestApplyAliases(t *testing.T) {
+	services := []radar.Service{{Port: 3000, Process: "web"}, {Port: 5432, Process: "postgres"}}
+	got := applyAliases(services, map[int]string{3000: "frontend"})
+	if got[0].Alias != "frontend" {
+		t.Fatalf("alias not applied: %+v", got[0])
+	}
+	if got[1].Alias != "" {
+		t.Fatalf("unexpected alias on unmatched service: %+v", got[1])
+	}
+}
+
+func TestLoadAliases(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "aliases.txt")
+	if err := os.WriteFile(path, []byte("# comment\n3000=frontend\n5432=postgres-db\n"), 0o644); err != nil {
+		t.Fatalf("write aliases file: %v", err)
+	}
+	aliases, err := loadAliases(path)
+	if err != nil {
+		t.Fatalf("loadAliases() error = %v", err)
+	}
+	if aliases[3000] != "frontend" || aliases[5432] != "postgres-db" {
+		t.Fatalf("unexpected aliases: %+v", aliases)
+	}
+}
+
+func TestRenderPrometheusMetrics(t *testing.T) {
+	metrics := renderPrometheusMetrics([]radar.Service{{Port: 3000, Process: "web", Fingerprint: "vite-dev-server", Alias: "frontend", HTTPStatus: 200}})
+	for _, want := range []string{"devport_radar_services_total 1", "devport_radar_service_up{port=\"3000\"", "alias=\"frontend\"", "devport_radar_service_http_status{"} {
+		if !strings.Contains(metrics, want) {
+			t.Fatalf("renderPrometheusMetrics() missing %q in %s", want, metrics)
 		}
 	}
 }

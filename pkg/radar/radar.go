@@ -26,6 +26,7 @@ type Service struct {
 	Title       string    `json:"title,omitempty"`
 	Server      string    `json:"server,omitempty"`
 	Fingerprint string    `json:"fingerprint,omitempty"`
+	Alias       string    `json:"alias,omitempty"`
 	ScannedAt   time.Time `json:"scanned_at"`
 }
 

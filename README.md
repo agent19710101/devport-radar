@@ -10,7 +10,7 @@ Modern local development stacks (apps, databases, queues, agent runtimes, browse
 
 ## Status
 
-- Current release: **v0.5.2**
+- Current release: **v0.6.0**
 - Platform: Linux (`ss`) + macOS fallback (`lsof`)
 - Maturity: early, actively iterating in small releases
 - Merge readiness requires CI matrix (`ubuntu-latest` + `macos-latest`, Go `1.24.x`/`1.25.x`) with `gofmt`, `go vet`, `go test`, and `go test -race` (latest Ubuntu Go lane)
@@ -31,6 +31,8 @@ Modern local development stacks (apps, databases, queues, agent runtimes, browse
 - Limit output to responsive HTTP services via `--only-http`
 - Optional probe bypass via `--no-http-probe` for faster port/process inventory
 - Richer service fingerprints for common local runtimes (Ollama, Open WebUI, Qdrant, Redis, Postgres, MySQL, MongoDB, Grafana, Prometheus)
+- Optional service aliases via local file (`--aliases-file`)
+- Prometheus scrape endpoint mode (`--metrics-addr`, `--metrics-path`)
 
 ## Install
 
@@ -89,6 +91,18 @@ devport-radar --watch --tui --interval 3
 
 # reduce title truncation in narrow terminals
 devport-radar --title-width 24
+
+# apply stable aliases for ports from a local file
+cat > aliases.txt <<'EOF'
+3000=frontend
+5432=postgres-db
+8080=api
+EOF
+devport-radar --aliases-file ./aliases.txt
+
+# expose Prometheus metrics for scrape
+devport-radar --metrics-addr :9317 --aliases-file ./aliases.txt
+curl -s localhost:9317/metrics
 ```
 
 ## Automation Contract (v0.x, stable unless noted)
@@ -113,6 +127,7 @@ devport-radar --title-width 24
     "server": "Caddy",
     "title": "Dashboard",
     "fingerprint": "http-service",
+    "alias": "frontend",
     "scanned_at": "2026-03-10T06:30:00Z"
   }
 ]
@@ -143,6 +158,20 @@ Each line is a JSON object with:
 
 - Valid with `--watch`; renders a minimal terminal dashboard with clear-screen redraws.
 - Intended for interactive use (not machine-readable pipelines).
+
+### `--aliases-file`
+
+- Optional plain-text file mapping stable labels to ports.
+- Format: one mapping per line, `<port>=<alias>` (comments allowed with `#`).
+- Aliases are applied to table output, JSON snapshots, watch events, and metrics labels.
+
+### `--metrics-addr` / `--metrics-path`
+
+- Starts an HTTP server that exposes Prometheus metrics (`text/plain; version=0.0.4`).
+- Endpoint performs a fresh scan on each scrape and emits:
+  - `devport_radar_services_total`
+  - `devport_radar_service_up{port,process,fingerprint,alias}`
+  - `devport_radar_service_http_status{...}` (only when probe succeeded)
 
 ### `--no-http-probe`
 
@@ -188,8 +217,8 @@ Each line is a JSON object with:
 ## Roadmap
 
 - [x] Minimal TUI mode (`--watch --tui`)
-- [ ] Project labels/aliases for stable service naming
-- [ ] Prometheus exporter mode
+- [x] Project labels/aliases for stable service naming
+- [x] Prometheus exporter mode
 - [x] macOS fallback backend (`lsof`) when `ss` is unavailable
 - [ ] See scoped milestones in [RELEASE_PLAN.md](./RELEASE_PLAN.md)
 

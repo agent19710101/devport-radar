@@ -29,29 +29,27 @@ Quality gate:
 - README includes usage + keybindings
 - `go test ./...` green
 
-### v0.6.0 — integrations and automation
+### v0.6.0 — integrations and automation ✅
 
 Tracking issue: [#3](https://github.com/agent19710101/devport-radar/issues/3)
 
-Scope:
-- Prometheus exporter mode
-- Optional service labels/aliases from local config
-- Example alerting/dashboard snippets in docs
+Delivered:
+- Prometheus exporter mode (`--metrics-addr`, `--metrics-path`)
+- Optional service labels/aliases from local file (`--aliases-file`)
+- Docs/examples for alias config and metrics scraping
+- Test coverage for alias parsing/application and metrics rendering
 
-Quality gate:
-- Integration tests for exporter output
-- Backward-compatibility notes for config fields
-- `go test ./...` + `go vet ./...` green
+Quality gate: `go test ./...` + `go vet ./...` green.
 
-### v0.7.0 — agent-runtime presets and richer fingerprints
+### v0.7.0 — next reliability and UX polish
 
-Tracking issue: [#12](https://github.com/agent19710101/devport-radar/issues/12)
+Tracking issue: TBD
 
 Scope:
-- Optional profile presets for common agent/dev stacks
-- Additional non-invasive fingerprint hints (framework/runtime cues)
-- Keep core scan/probe behavior backward-compatible
+- Add machine-friendly `/healthz` endpoint in metrics mode
+- Optional sort controls for table/TUI (`--sort port|process|http`)
+- Docs: minimal Grafana panel + alert examples for `devport_radar_service_up`
 
 Quality gate:
-- New hints covered with deterministic tests
+- Deterministic tests for sort ordering + endpoint output
 - No regressions in existing JSON/NDJSON contracts
